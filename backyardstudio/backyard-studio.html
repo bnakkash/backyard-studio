@@ -279,6 +279,35 @@
   .btn-row { display: flex; gap: 6px; }
   .btn-row .btn { flex: 1; }
 
+  .save-status {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.18em;
+    color: var(--text-dimmer);
+    text-transform: uppercase;
+    margin-top: 12px;
+    display: flex; align-items: center; gap: 7px;
+    transition: color 0.18s;
+  }
+  .save-status::before {
+    content: '';
+    width: 5px; height: 5px;
+    border-radius: 50%;
+    background: var(--text-dimmer);
+    transition: background 0.18s;
+  }
+  .save-status.saved {
+    color: var(--accent);
+  }
+  .save-status.saved::before { background: var(--accent); }
+  .save-status.saving::before {
+    background: var(--text-dim);
+    animation: savePulse 0.8s ease-in-out infinite;
+  }
+  @keyframes savePulse {
+    50% { opacity: 0.3; }
+  }
+
   #bottom-bar {
     bottom: 22px; left: 50%;
     transform: translateX(-50%);
@@ -301,6 +330,11 @@
   .cam-btn:hover { color: var(--text); background: var(--panel-hi); }
   .cam-btn:active { background: var(--border); }
   .cam-btn.active { color: var(--accent); background: var(--panel-hi); }
+  .cam-divider {
+    width: 1px;
+    background: var(--border);
+    margin: 6px 4px;
+  }
 
   #help {
     position: absolute;
@@ -522,8 +556,8 @@
     <div class="btn-row">
       <button class="btn" id="clear-btn">Clear</button>
       <button class="btn" id="export-btn">Export</button>
-      <button class="btn primary" id="save-btn">Save</button>
     </div>
+    <div class="save-status" id="save-status">Auto-save</div>
   </div>
 </div>
 
@@ -532,12 +566,14 @@
   <button class="cam-btn" data-view="top">Top-down</button>
   <button class="cam-btn" data-view="front">Yard view</button>
   <button class="cam-btn" id="reset-cam">Reset</button>
+  <span class="cam-divider"></span>
+  <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
   <kbd>click</kbd> select &nbsp;·&nbsp; <kbd>drag</kbd> move &nbsp;·&nbsp; <kbd>del</kbd> remove &nbsp;·&nbsp; <kbd>esc</kbd> deselect<br>
-  <kbd>⌘Z</kbd> undo &nbsp;·&nbsp; <kbd>⌘⇧Z</kbd> redo &nbsp;·&nbsp; <kbd>⌘D</kbd> duplicate
+  <kbd>⌘Z</kbd> undo &nbsp;·&nbsp; <kbd>⌘⇧Z</kbd> redo &nbsp;·&nbsp; <kbd>⌘D</kbd> duplicate &nbsp;·&nbsp; <kbd>g</kbd> snap
 </div>
 
 <div id="toast"></div>
@@ -1268,9 +1304,27 @@ function refreshSelectionPanel() {
   document.getElementById('scale-value').textContent = (sc / 100).toFixed(2) + '×';
 }
 
+// ============================================================
+// Snap-to-grid (1 ft). Persists across reloads.
+// ============================================================
+const SNAP_STEP = 1;
+let snapEnabled = (() => {
+  try { return localStorage.getItem('backyard_snap') === '1'; }
+  catch (_) { return false; }
+})();
+function snap(v) { return snapEnabled ? Math.round(v / SNAP_STEP) * SNAP_STEP : v; }
+function setSnap(on) {
+  snapEnabled = !!on;
+  try { localStorage.setItem('backyard_snap', snapEnabled ? '1' : '0'); }
+  catch (_) {}
+  const btn = document.getElementById('snap-btn');
+  btn.classList.toggle('active', snapEnabled);
+  btn.setAttribute('aria-pressed', snapEnabled ? 'true' : 'false');
+}
+
 function placeItem(kind, x, z) {
   const mesh = PLACEABLES[kind].build();
-  mesh.position.set(x, 0, z);
+  mesh.position.set(snap(x), 0, snap(z));
   // Small random rotation for organic feel on plants
   if (PLACEABLES[kind].category === 'Plants') {
     mesh.rotation.y = Math.random() * Math.PI * 2;
@@ -1302,6 +1356,9 @@ function pushHistory() {
   history.push(snapshotLayout());
   if (history.length > HISTORY_MAX) history.shift();
   else historyIdx++;
+  // Persist after every change. scheduleAutosave is defined later in the
+  // script, so guard against the very early load before it's wired up.
+  if (typeof scheduleAutosave === 'function') scheduleAutosave();
 }
 
 function restoreFrom(state) {
@@ -1481,24 +1538,60 @@ const layoutStore = {
 
 document.getElementById('export-btn').addEventListener('click', exportPNG);
 
+// Initialize snap-btn from persisted state, then bind toggle
+setSnap(snapEnabled);
+document.getElementById('snap-btn').addEventListener('click', () => {
+  setSnap(!snapEnabled);
+  toast(snapEnabled ? 'Snap to 1 ft · ON' : 'Snap · OFF');
+});
+
 document.getElementById('panel-close').addEventListener('click', () => {
   selectItem(null);
   clearPaletteSelection();
 });
 
-document.getElementById('save-btn').addEventListener('click', async () => {
-  const data = placed.map(p => ({
-    kind: p.kind,
-    x: p.mesh.position.x, z: p.mesh.position.z,
-    rot: p.mesh.rotation.y, scale: p.mesh.scale.x
-  }));
-  try {
-    await layoutStore.set(JSON.stringify(data));
-    toast(`Saved · ${data.length} items`);
-  } catch (e) {
-    toast('Save unavailable here');
-  }
-});
+// Autosave: debounced write of the current layout, hooked via pushHistory().
+const saveStatus = document.getElementById('save-status');
+let autosaveTimer = null;
+let autosaveSeq = 0;
+
+function setSaveStatusIdle() {
+  saveStatus.classList.remove('saving');
+  saveStatus.classList.remove('saved');
+  saveStatus.textContent = 'Auto-save';
+}
+function setSaveStatusSaving() {
+  saveStatus.classList.remove('saved');
+  saveStatus.classList.add('saving');
+  saveStatus.textContent = 'Saving';
+}
+function setSaveStatusSaved(n) {
+  saveStatus.classList.remove('saving');
+  saveStatus.classList.add('saved');
+  saveStatus.textContent = `Saved · ${n}`;
+}
+function setSaveStatusError() {
+  saveStatus.classList.remove('saving', 'saved');
+  saveStatus.textContent = 'Save unavailable';
+}
+
+function scheduleAutosave() {
+  setSaveStatusSaving();
+  clearTimeout(autosaveTimer);
+  autosaveTimer = setTimeout(async () => {
+    const seq = ++autosaveSeq;
+    const data = snapshotLayout();
+    try {
+      await layoutStore.set(JSON.stringify(data));
+      // Ignore if a newer autosave already started
+      if (seq !== autosaveSeq) return;
+      setSaveStatusSaved(data.length);
+    } catch (_) {
+      if (seq !== autosaveSeq) return;
+      setSaveStatusError();
+    }
+  }, 250);
+}
 
 // Attempt to load saved layout
 (async () => {
@@ -1608,15 +1701,16 @@ canvas.addEventListener('mousemove', e => {
     if (dragItem && didDrag) {
       const pt = groundPick(e);
       if (pt) {
-        dragItem.mesh.position.x = pt.x;
-        dragItem.mesh.position.z = pt.z;
+        dragItem.mesh.position.x = snap(pt.x);
+        dragItem.mesh.position.z = snap(pt.z);
         if (dragItem.outlineWrapper) {
           dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
         }
       }
     } else if (!dragItem) {
-      cam.theta += dx * 0.0075;
-      cam.phi -= dy * 0.0075;
+      // Camera-grab orbit (matches touch): drag right → world rotates right
+      cam.theta -= dx * 0.0075;
+      cam.phi += dy * 0.0075;
       cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi));
       updateCam();
     }
@@ -1709,7 +1803,7 @@ canvas.addEventListener('touchmove', e => {
     if (dragItem && didDrag) {
       const pt = groundPick(t);
       if (pt) {
-        dragItem.mesh.position.set(pt.x, 0, pt.z);
+        dragItem.mesh.position.set(snap(pt.x), 0, snap(pt.z));
         if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
       }
     } else if (!dragItem) {
@@ -1860,6 +1954,9 @@ window.addEventListener('keydown', e => {
   } else if (mod && (e.key === 'd' || e.key === 'D')) {
     e.preventDefault();
     duplicateSelected();
+  } else if (!mod && (e.key === 'g' || e.key === 'G')) {
+    setSnap(!snapEnabled);
+    toast(snapEnabled ? 'Snap to 1 ft · ON' : 'Snap · OFF');
   }
 });
 
