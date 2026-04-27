@@ -8,6 +8,9 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#12150e">
 <title>Backyard Studio</title>
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
 <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Manrope:wght@300;400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
   :root {
@@ -1865,6 +1868,16 @@ animate();
 
 // First-run welcome
 setTimeout(() => toast('Welcome · drag to orbit, pick a plant or feature to place'), 300);
+
+// ============================================================
+// PWA: register service worker for offline + installable home-screen
+// (skipped on file:// because SW requires http(s) or localhost)
+// ============================================================
+if ('serviceWorker' in navigator && location.protocol !== 'file:') {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support unavailable */ });
+  });
+}
 </script>
 </body>
 </html>

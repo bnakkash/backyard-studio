@@ -1,0 +1,19 @@
+{
+  "name": "Backyard Studio",
+  "short_name": "Backyard",
+  "description": "Landscape planner for your yard.",
+  "start_url": "./backyard-studio.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#12150e",
+  "theme_color": "#12150e",
+  "icons": [
+    {
+      "src": "icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any maskable"
+    }
+  ]
+}
