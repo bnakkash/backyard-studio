@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v22</div>
+<div id="version">v23</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2389,7 +2389,19 @@ canvas.addEventListener('touchmove', e => {
   if (touchState === 'one' && e.touches.length === 1) {
     const t = e.touches[0];
     const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
-    if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) didDrag = true;
+    if (!didDrag) {
+      const moved = Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y);
+      if (moved > 4) {
+        didDrag = true;
+        // Velocity classifier: a fast first-move (>500 px/s) is intent-to-pan,
+        // not intent-to-drag-this-item. Drop the dragItem candidate so the
+        // user's flick pans the camera even if the touch happened to start
+        // on top of an item.
+        const elapsed = Math.max(1, performance.now() - dragStart.t);
+        const speed = moved / elapsed; // px / ms
+        if (speed > 0.5 && dragItem) dragItem = null;
+      }
+    }
     if (dragItem && didDrag) {
       // First time a real drag actually starts, promote the candidate to
       // an actual selection so the outline ring shows.
