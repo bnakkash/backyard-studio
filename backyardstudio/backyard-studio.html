@@ -604,7 +604,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v16</div>
+<div id="version">v17</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2247,12 +2247,33 @@ function groundPick(e) {
 function pickPlaced(e) {
   setRay(e);
   const meshes = placed.map(p => p.mesh);
-  if (!meshes.length) return null;
-  const hits = raycaster.intersectObjects(meshes, true);
-  if (!hits.length) return null;
-  let o = hits[0].object;
-  while (o && !placed.find(p => p.mesh === o)) o = o.parent;
-  return placed.find(p => p.mesh === o) || null;
+  if (meshes.length) {
+    const hits = raycaster.intersectObjects(meshes, true);
+    if (hits.length) {
+      let o = hits[0].object;
+      while (o && !placed.find(p => p.mesh === o)) o = o.parent;
+      const found = placed.find(p => p.mesh === o);
+      if (found) return found;
+    }
+  }
+  // Fallback: forgiving screen-space proximity. If the ray missed (small
+  // leaves, thin branches, gaps between geometry) but the tap is near an
+  // item's center on screen, pick the closest one within finger reach.
+  const rect = canvas.getBoundingClientRect();
+  const TOL_PX = 50; // ~ a finger pad on a phone
+  const v = new T.Vector3();
+  let best = null, bestDist = TOL_PX;
+  for (const p of placed) {
+    v.copy(p.mesh.position);
+    v.y += 0.5; // aim near center of typical item, not its base
+    v.project(camera);
+    if (v.z > 1) continue; // behind the camera
+    const sx = (v.x * 0.5 + 0.5) * rect.width + rect.left;
+    const sy = (-v.y * 0.5 + 0.5) * rect.height + rect.top;
+    const dist = Math.hypot(e.clientX - sx, e.clientY - sy);
+    if (dist < bestDist) { bestDist = dist; best = p; }
+  }
+  return best;
 }
 
 // ============================================================
