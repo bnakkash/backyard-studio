@@ -230,27 +230,65 @@
     width: 100%;
     -webkit-appearance: none; appearance: none;
     background: var(--border);
-    height: 2px;
-    border-radius: 1px;
+    height: 4px;
+    border-radius: 2px;
     outline: none;
   }
   .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
-    width: 14px; height: 14px;
+    width: 22px; height: 22px;
     background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
-    border: 2px solid var(--bg);
+    border: 3px solid var(--bg);
     box-shadow: 0 0 0 1px var(--accent);
   }
   .slider::-moz-range-thumb {
-    width: 14px; height: 14px;
+    width: 22px; height: 22px;
     background: var(--accent);
     border-radius: 50%;
     cursor: pointer;
-    border: 2px solid var(--bg);
+    border: 3px solid var(--bg);
     box-shadow: 0 0 0 1px var(--accent);
   }
+
+  .slider-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .step-btn {
+    flex: 0 0 auto;
+    padding: 7px 9px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    border-radius: 2px;
+    cursor: pointer;
+    min-width: 48px;
+    transition: all 0.12s;
+  }
+  .step-btn:hover { color: var(--accent); border-color: var(--accent); }
+  .step-btn:active { background: var(--panel-hi); transform: scale(0.96); }
+  .preset-row { display: flex; gap: 4px; margin-top: 6px; }
+  .preset-btn {
+    flex: 1;
+    padding: 6px 0;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .preset-btn:hover { color: var(--text); border-color: var(--border-hi); }
+  .preset-btn:active { background: var(--panel-hi); transform: scale(0.96); }
 
   .btn {
     display: inline-block;
@@ -576,9 +614,19 @@
   </div>
   <div class="section" id="selection-controls" style="display:none">
     <div class="field"><span>Rotation</span><span class="val" id="rot-value">0°</span></div>
-    <input type="range" id="rot-slider" class="slider" min="0" max="360" value="0">
+    <div class="slider-row">
+      <button class="step-btn" id="rot-minus" aria-label="Rotate -90°">−90°</button>
+      <input type="range" id="rot-slider" class="slider" min="0" max="360" value="0">
+      <button class="step-btn" id="rot-plus" aria-label="Rotate +90°">+90°</button>
+    </div>
     <div class="field"><span>Scale</span><span class="val" id="scale-value">1.0×</span></div>
     <input type="range" id="scale-slider" class="slider" min="50" max="200" value="100">
+    <div class="preset-row">
+      <button class="preset-btn" data-scale="50">0.5×</button>
+      <button class="preset-btn" data-scale="100">1×</button>
+      <button class="preset-btn" data-scale="150">1.5×</button>
+      <button class="preset-btn" data-scale="200">2×</button>
+    </div>
     <div style="height:12px"></div>
     <button class="btn danger" id="delete-btn" style="width:100%">Remove</button>
   </div>
@@ -604,7 +652,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v17</div>
+<div id="version">v18</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1696,29 +1744,57 @@ function exportPNG() {
   toast('Exported PNG');
 }
 
-document.getElementById('rot-slider').addEventListener('input', e => {
+// Helpers used by sliders, step buttons, presets, and gestures
+function applyRotationToSelection(rad, opts) {
   if (!selection) return;
-  const deg = parseInt(e.target.value);
-  selection.mesh.rotation.y = deg * Math.PI / 180;
+  selection.mesh.rotation.y = rad;
+  const deg = Math.round(((rad * 180 / Math.PI) % 360 + 360) % 360);
+  document.getElementById('rot-slider').value = deg;
   document.getElementById('rot-value').textContent = deg + '°';
-});
-document.getElementById('rot-slider').addEventListener('change', () => {
-  if (selection) pushHistory();
-});
-document.getElementById('scale-slider').addEventListener('input', e => {
+  if (opts && opts.commit) pushHistory();
+}
+function applyScaleToSelection(scale, opts) {
   if (!selection) return;
-  const s = parseInt(e.target.value) / 100;
-  selection.mesh.scale.setScalar(s);
-  document.getElementById('scale-value').textContent = s.toFixed(2) + '×';
-  // Rebuild outline ring
+  scale = Math.max(0.5, Math.min(2.0, scale));
+  selection.mesh.scale.setScalar(scale);
+  const sc = Math.round(scale * 100);
+  document.getElementById('scale-slider').value = sc;
+  document.getElementById('scale-value').textContent = scale.toFixed(2) + '×';
+  // Rebuild outline ring at the new size
   if (selection.outlineWrapper) {
     scene.remove(selection.outlineWrapper);
     selection.outline = null; selection.outlineWrapper = null;
     setOutline(selection, true);
   }
+  if (opts && opts.commit) pushHistory();
+}
+
+document.getElementById('rot-slider').addEventListener('input', e => {
+  applyRotationToSelection(parseInt(e.target.value) * Math.PI / 180);
+});
+document.getElementById('rot-slider').addEventListener('change', () => {
+  if (selection) pushHistory();
+});
+document.getElementById('rot-minus').addEventListener('click', () => {
+  if (!selection) return;
+  applyRotationToSelection(selection.mesh.rotation.y - Math.PI / 2, { commit: true });
+});
+document.getElementById('rot-plus').addEventListener('click', () => {
+  if (!selection) return;
+  applyRotationToSelection(selection.mesh.rotation.y + Math.PI / 2, { commit: true });
+});
+
+document.getElementById('scale-slider').addEventListener('input', e => {
+  applyScaleToSelection(parseInt(e.target.value) / 100);
 });
 document.getElementById('scale-slider').addEventListener('change', () => {
   if (selection) pushHistory();
+});
+document.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    if (!selection) return;
+    applyScaleToSelection(parseInt(btn.dataset.scale) / 100, { commit: true });
+  });
 });
 // ═══ Mobile drawer logic ═══════════════════════════════════════════
 const mobileToggle = document.getElementById('mobile-toggle');
@@ -2151,18 +2227,30 @@ canvas.addEventListener('touchmove', e => {
       }
     }
 
-    // Apply only the locked function.
+    // Apply only the locked function. When an item is selected, twist and
+    // pinch act on the ITEM (rotate / scale) instead of the camera. Tilt is
+    // always a camera operation. Tap empty space to deselect when you want
+    // to manipulate the camera again.
+    const onSelected = !!selection;
     if (twoFingerMode === 'pinch' && lastTouchDist) {
-      cam.radius = Math.max(8, Math.min(180, cam.radius * (lastTouchDist / d)));
+      if (onSelected) {
+        applyScaleToSelection(selection.mesh.scale.x * (d / lastTouchDist));
+      } else {
+        cam.radius = Math.max(8, Math.min(180, cam.radius * (lastTouchDist / d)));
+      }
     }
     // Tilt: drag up (dy<0) → phi increases → camera tilts toward horizontal
     if (twoFingerMode === 'tilt' && lastTouchCenter) {
       const dPhi = -dy * 0.006;
       cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + dPhi));
     }
-    // Twist → rotate camera around vertical axis
+    // Twist → rotate selection (or camera if nothing selected)
     if (twoFingerMode === 'twist' && lastTouchAngle !== null) {
-      cam.theta -= dAngle * 0.6;
+      if (onSelected) {
+        applyRotationToSelection(selection.mesh.rotation.y - dAngle);
+      } else {
+        cam.theta -= dAngle * 0.6;
+      }
     }
     lastTouchDist = d;
     lastTouchCenter = center;
@@ -2193,11 +2281,18 @@ canvas.addEventListener('touchend', e => {
     if (Math.hypot(dragVel.x, dragVel.y) > 2) startInertia();
   }
 
+  // If a two-finger gesture rotated or scaled the selection, commit it to
+  // history when the gesture ends.
+  const twoFingerEndingOnSelection =
+    touchState === 'two' && selection &&
+    (twoFingerMode === 'pinch' || twoFingerMode === 'twist');
+
   // 2 → 1 finger: do NOT promote the remaining finger to a one-finger pan.
   // Apple Maps requires the user to lift both fingers and start fresh, which
   // prevents an accidental pan after tilt/twist when fingers don't lift in
   // perfect sync. We park in a disabled state until all fingers are up.
   if (touchState === 'two' && e.touches.length === 1) {
+    if (twoFingerEndingOnSelection) pushHistory();
     touchState = null;
     dragItem = null;
     didDrag = false;
@@ -2210,6 +2305,7 @@ canvas.addEventListener('touchend', e => {
 
   // All fingers up → full reset
   if (e.touches.length === 0) {
+    if (twoFingerEndingOnSelection) pushHistory();
     touchState = null;
     dragItem = null;
     lastTouchDist = null;
