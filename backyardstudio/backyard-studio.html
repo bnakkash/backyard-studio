@@ -1934,14 +1934,15 @@ canvas.addEventListener('touchend', e => {
     if (Math.hypot(dragVel.x, dragVel.y) > 2) startInertia();
   }
 
-  // 2 → 1 finger: switch to one-finger mode using the remaining finger
+  // 2 → 1 finger: do NOT promote the remaining finger to a one-finger pan.
+  // Apple Maps requires the user to lift both fingers and start fresh, which
+  // prevents an accidental pan after tilt/twist when fingers don't lift in
+  // perfect sync. We park in a disabled state until all fingers are up.
   if (touchState === 'two' && e.touches.length === 1) {
-    const t = e.touches[0];
-    lastMouse = { x: t.clientX, y: t.clientY };
-    dragStart = { x: t.clientX, y: t.clientY };
+    touchState = null;
+    dragItem = null;
     didDrag = false;
     dragVel.x = 0; dragVel.y = 0;
-    touchState = 'one';
     lastTouchDist = null;
     lastTouchCenter = null;
     lastTouchAngle = null;
