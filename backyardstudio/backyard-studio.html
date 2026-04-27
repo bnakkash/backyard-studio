@@ -437,12 +437,77 @@
   }
   #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 
+  #sun-bar {
+    position: absolute;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 12px;
+    z-index: 10;
+  }
+  .sun-icon {
+    font-size: 14px;
+    color: var(--accent);
+    line-height: 1;
+  }
+  .sun-time {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    color: var(--text);
+    min-width: 64px;
+    text-align: center;
+  }
+  .sun-slider {
+    flex: 1;
+    width: 180px;
+    -webkit-appearance: none; appearance: none;
+    background: var(--border);
+    height: 3px;
+    border-radius: 2px;
+    outline: none;
+  }
+  .sun-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 18px; height: 18px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .sun-slider::-moz-range-thumb {
+    width: 18px; height: 18px;
+    background: var(--accent);
+    border-radius: 50%;
+    cursor: pointer;
+    border: 2px solid var(--bg);
+    box-shadow: 0 0 0 1px var(--accent);
+  }
+  .sun-now {
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    padding: 5px 9px;
+    border-radius: 2px;
+    cursor: pointer;
+    transition: all 0.12s;
+  }
+  .sun-now:hover { color: var(--accent); border-color: var(--accent); }
+  .sun-now:active { background: var(--panel-hi); transform: scale(0.96); }
+
   #compass {
     position: absolute;
-    top: 20px; left: 50%;
+    top: 18px; right: 20px;
     --compass-rot: 0deg;
-    transform: translateX(-50%) rotate(var(--compass-rot));
-    width: 56px; height: 56px;
+    transform: rotate(var(--compass-rot));
+    width: 50px; height: 50px;
     display: flex; align-items: center; justify-content: center;
     font-family: 'Fraunces', serif;
     font-size: 16px;
@@ -554,11 +619,19 @@
     #panel-close { display: flex; align-items: center; justify-content: center; }
 
     #compass {
-      top: 14px; right: 16px; left: auto;
+      top: 14px; right: 12px; left: auto;
       transform: rotate(var(--compass-rot));
-      width: 44px; height: 44px;
-      font-size: 13px;
+      width: 40px; height: 40px;
+      font-size: 12px;
     }
+    #sun-bar {
+      top: 64px;
+      padding: 6px 10px;
+      gap: 6px;
+    }
+    .sun-time { font-size: 10px; min-width: 56px; }
+    .sun-slider { width: 120px; }
+    .sun-now { font-size: 9px; padding: 4px 7px; }
 
     #bottom-bar {
       bottom: 14px;
@@ -595,6 +668,13 @@
   <div class="ring"></div>
   <span class="n">N</span>
 </button>
+
+<div id="sun-bar" class="panel">
+  <span class="sun-icon">☀</span>
+  <span class="sun-time" id="sun-time">12:00 PM</span>
+  <input type="range" id="sun-slider" class="sun-slider" min="6" max="20" step="0.1" value="12">
+  <button class="sun-now" id="sun-now" type="button">Now</button>
+</div>
 
 <div id="left-panel" class="panel">
   <div class="panel-header">
@@ -656,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v20</div>
+<div id="version">v21</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -706,7 +786,59 @@ sun.shadow.camera.bottom = -55;
 sun.shadow.bias = -0.0005;
 scene.add(sun);
 
-scene.add(new T.HemisphereLight(0xbfd4e6, 0x6d7f55, 0.4));
+const hemi = new T.HemisphereLight(0xbfd4e6, 0x6d7f55, 0.4);
+scene.add(hemi);
+
+// ============================================================
+// Sun position by time-of-day. Simplified solar arc for Jacksonville
+// (lat ~30° N): rises east, peaks in the south, sets west; max altitude
+// at noon ~70°. Slider range is 6 AM → 8 PM (h=6..20).
+// ============================================================
+const SUN_R = 70;
+const SUN_MAX_ALT = 1.22; // ~70°
+const _sunSkyDawn  = new T.Color(0xe9b078); // warm horizon
+const _sunSkyNoon  = new T.Color(0xd8dfd0); // existing midday
+const _sunLightDawn = new T.Color(0xff9b58); // warm orange
+const _sunLightNoon = new T.Color(0xffe0b8); // existing
+const _sunSkyTmp = new T.Color();
+const _sunLightTmp = new T.Color();
+
+function setSunTime(hour) {
+  const h = Math.max(6, Math.min(20, hour));
+  const f = (h - 6) / 14;                     // 0..1
+  const altFrac = Math.sin(f * Math.PI);      // 0..1..0
+  const altitude = altFrac * SUN_MAX_ALT;
+  const azimuthRad = (90 + f * 180) * Math.PI / 180; // east → south → west
+  const horiz = SUN_R * Math.cos(altitude);
+  sun.position.set(
+    horiz * Math.sin(azimuthRad),
+    Math.max(2, SUN_R * Math.sin(altitude)),
+    -horiz * Math.cos(azimuthRad)
+  );
+  // Sky / fog tint
+  _sunSkyTmp.copy(_sunSkyNoon).lerp(_sunSkyDawn, 1 - altFrac);
+  scene.background.copy(_sunSkyTmp);
+  scene.fog.color.copy(_sunSkyTmp);
+  // Sunlight color + intensity
+  _sunLightTmp.copy(_sunLightNoon).lerp(_sunLightDawn, 1 - altFrac);
+  sun.color.copy(_sunLightTmp);
+  sun.intensity = 0.55 + altFrac * 0.7;       // 0.55 .. 1.25
+  hemi.intensity = 0.25 + altFrac * 0.35;     // 0.25 .. 0.6
+  // UI
+  const sunTimeEl = document.getElementById('sun-time');
+  if (sunTimeEl) sunTimeEl.textContent = formatHour(h);
+}
+function formatHour(h) {
+  const hr = Math.floor(h);
+  const min = Math.round((h - hr) * 60) % 60;
+  const period = hr >= 12 ? 'PM' : 'AM';
+  const display = hr === 0 ? 12 : hr > 12 ? hr - 12 : hr;
+  return `${display}:${String(min).padStart(2, '0')} ${period}`;
+}
+function nowAsHour() {
+  const n = new Date();
+  return n.getHours() + n.getMinutes() / 60;
+}
 
 // ============================================================
 // Ground textures (procedural grass)
@@ -2552,6 +2684,35 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// ============================================================
+// Sun-time slider wiring + persistence
+// ============================================================
+(function initSunTime() {
+  const slider = document.getElementById('sun-slider');
+  let saved = NaN;
+  try { saved = parseFloat(localStorage.getItem('backyard_sun_hour')); } catch (_) {}
+  let initial;
+  if (!isNaN(saved) && saved >= 6 && saved <= 20) {
+    initial = saved;
+  } else {
+    // No saved value → start at the user's actual local time (clamped to daylight)
+    initial = Math.max(6, Math.min(20, nowAsHour()));
+  }
+  slider.value = initial;
+  setSunTime(initial);
+  slider.addEventListener('input', e => setSunTime(parseFloat(e.target.value)));
+  slider.addEventListener('change', e => {
+    try { localStorage.setItem('backyard_sun_hour', e.target.value); } catch (_) {}
+  });
+  document.getElementById('sun-now').addEventListener('click', () => {
+    const h = Math.max(6, Math.min(20, nowAsHour()));
+    slider.value = h;
+    setSunTime(h);
+    try { localStorage.setItem('backyard_sun_hour', String(h)); } catch (_) {}
+    toast('Sun · current time');
+  });
+})();
 
 // First-run welcome
 setTimeout(() => toast('Welcome · drag to orbit, pick a plant or feature to place'), 300);
