@@ -1819,9 +1819,9 @@ let twoFingerMode = null; // null | 'pinch' | 'tilt' | 'twist'
 let cumTilt = 0;          // accumulated |dy| (px)
 let cumTwist = 0;         // accumulated |dAngle| (rad)
 let cumPinch = 0;         // accumulated |Δ finger distance| (px)
-const TILT_LOCK_PX = 14;
-const TWIST_LOCK_RAD = 0.10; // ~5.7°
-const PINCH_LOCK_PX = 14;
+const TILT_LOCK_PX = 7;
+const TWIST_LOCK_RAD = 0.05; // ~2.9°
+const PINCH_LOCK_PX = 7;
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
