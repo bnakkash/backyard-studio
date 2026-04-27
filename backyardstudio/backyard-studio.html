@@ -330,6 +330,18 @@
   .cam-btn:hover { color: var(--text); background: var(--panel-hi); }
   .cam-btn:active { background: var(--border); }
   .cam-btn.active { color: var(--accent); background: var(--panel-hi); }
+  .cam-btn:disabled {
+    opacity: 0.32;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+  .cam-btn.icon-btn {
+    font-family: 'Fraunces', serif;
+    font-size: 17px;
+    line-height: 1;
+    padding: 6px 11px;
+    letter-spacing: 0;
+  }
   .cam-divider {
     width: 1px;
     background: var(--border);
@@ -562,6 +574,9 @@
 </div>
 
 <div id="bottom-bar" class="panel">
+  <button class="cam-btn icon-btn" id="undo-btn" aria-label="Undo" title="Undo">↶</button>
+  <button class="cam-btn icon-btn" id="redo-btn" aria-label="Redo" title="Redo">↷</button>
+  <span class="cam-divider"></span>
   <button class="cam-btn active" data-view="perspective">Perspective</button>
   <button class="cam-btn" data-view="top">Top-down</button>
   <button class="cam-btn" data-view="front">Yard view</button>
@@ -1359,6 +1374,7 @@ function pushHistory() {
   // Persist after every change. scheduleAutosave is defined later in the
   // script, so guard against the very early load before it's wired up.
   if (typeof scheduleAutosave === 'function') scheduleAutosave();
+  if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
 }
 
 function restoreFrom(state) {
@@ -1384,6 +1400,8 @@ function undo() {
   if (historyIdx <= 0) { toast('Nothing to undo'); return; }
   historyIdx--;
   restoreFrom(history[historyIdx]);
+  if (typeof scheduleAutosave === 'function') scheduleAutosave();
+  if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
   toast('Undo');
 }
 
@@ -1391,6 +1409,8 @@ function redo() {
   if (historyIdx >= history.length - 1) { toast('Nothing to redo'); return; }
   historyIdx++;
   restoreFrom(history[historyIdx]);
+  if (typeof scheduleAutosave === 'function') scheduleAutosave();
+  if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
   toast('Redo');
 }
 
@@ -1545,6 +1565,16 @@ document.getElementById('snap-btn').addEventListener('click', () => {
   toast(snapEnabled ? 'Snap to 1 ft · ON' : 'Snap · OFF');
 });
 
+const undoBtn = document.getElementById('undo-btn');
+const redoBtn = document.getElementById('redo-btn');
+function updateUndoRedoButtons() {
+  undoBtn.disabled = historyIdx <= 0;
+  redoBtn.disabled = historyIdx >= history.length - 1;
+}
+undoBtn.addEventListener('click', undo);
+redoBtn.addEventListener('click', redo);
+updateUndoRedoButtons();
+
 document.getElementById('panel-close').addEventListener('click', () => {
   selectItem(null);
   clearPaletteSelection();
@@ -1650,7 +1680,7 @@ let didDrag = false;
 
 canvas.addEventListener('mousedown', e => {
   lastMouse = { x: e.clientX, y: e.clientY };
-  dragStart = { x: e.clientX, y: e.clientY };
+  dragStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   didDrag = false;
   if (e.button === 0) {
     mouseState = 'left';
@@ -1670,14 +1700,16 @@ canvas.addEventListener('mousedown', e => {
 window.addEventListener('mouseup', e => {
   if (!mouseState) return;
   canvas.classList.remove('panning');
+  const dur = performance.now() - (dragStart ? dragStart.t : 0);
   if (!didDrag) {
     if (mouseState === 'left') {
-      if (selectedKind) {
+      // Place only on a brisk tap. Press-and-hold without moving most likely
+      // means the user intended to drag the camera and released early —
+      // dropping an item there is the worst possible default.
+      if (selectedKind && dur < 300) {
         const pt = groundPick(e);
-        if (pt) {
-          placeItem(selectedKind, pt.x, pt.z);
-        }
-      } else if (!dragItem) {
+        if (pt) placeItem(selectedKind, pt.x, pt.z);
+      } else if (!selectedKind && !dragItem) {
         const hit = pickPlaced(e);
         if (!hit) selectItem(null);
       }
@@ -1777,7 +1809,7 @@ canvas.addEventListener('touchstart', e => {
   if (e.touches.length === 1) {
     const t = e.touches[0];
     lastMouse = { x: t.clientX, y: t.clientY };
-    dragStart = { x: t.clientX, y: t.clientY };
+    dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
     didDrag = false;
     orbitVel.theta = 0; orbitVel.phi = 0;
     if (!selectedKind) {
@@ -1858,10 +1890,13 @@ canvas.addEventListener('touchend', e => {
   // Tap → place or select (only when there was no drag and all fingers are up)
   if (touchState === 'one' && !didDrag && e.touches.length === 0 && e.changedTouches.length === 1) {
     const t = e.changedTouches[0];
-    if (selectedKind) {
+    const dur = performance.now() - (dragStart ? dragStart.t : 0);
+    // A press-and-release without movement most likely meant "I was about to
+    // drag the camera." Only register a true brisk tap as a placement.
+    if (selectedKind && dur < 300) {
       const pt = groundPick(t);
       if (pt) placeItem(selectedKind, pt.x, pt.z);
-    } else if (!dragItem) {
+    } else if (!selectedKind && !dragItem) {
       const hit = pickPlaced(t);
       if (!hit) selectItem(null);
     }
