@@ -1429,20 +1429,26 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   toast('Layout cleared');
 });
 
-// Storage adapter: prefer host-provided window.storage, fall back to localStorage
+// Storage adapter: prefer host-provided window.storage, fall back to localStorage.
+// Any failure of window.storage (rejection or sync throw) silently falls through.
 const layoutStore = {
   async set(value) {
     if (window.storage && typeof window.storage.set === 'function') {
-      return window.storage.set('backyard_layout', value);
+      try { return await window.storage.set('backyard_layout', value); }
+      catch (_) { /* fall through */ }
     }
-    localStorage.setItem('backyard_layout', value);
+    try { localStorage.setItem('backyard_layout', value); }
+    catch (e) { throw e; }
   },
   async get() {
     if (window.storage && typeof window.storage.get === 'function') {
-      return window.storage.get('backyard_layout');
+      try { return await window.storage.get('backyard_layout'); }
+      catch (_) { /* fall through */ }
     }
-    const v = localStorage.getItem('backyard_layout');
-    return v != null ? { value: v } : null;
+    try {
+      const v = localStorage.getItem('backyard_layout');
+      return v != null ? { value: v } : null;
+    } catch (_) { return null; }
   }
 };
 
