@@ -637,6 +637,7 @@
     <div class="section-label">Layout</div>
     <div class="btn-row">
       <button class="btn" id="clear-btn">Clear</button>
+      <button class="btn" id="share-btn">Share</button>
       <button class="btn" id="export-btn">Export</button>
     </div>
     <div class="save-status" id="save-status">Auto-save</div>
@@ -655,7 +656,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v19</div>
+<div id="version">v20</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1673,11 +1674,26 @@ function pushHistory() {
   if (typeof updateUndoRedoButtons === 'function') updateUndoRedoButtons();
 }
 
+function disposeTree(obj) {
+  if (!obj) return;
+  obj.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      if (Array.isArray(o.material)) o.material.forEach(m => m.dispose && m.dispose());
+      else if (o.material.dispose) o.material.dispose();
+    }
+  });
+}
+
 function restoreFrom(state) {
   selectItem(null);
   placed.forEach(p => {
     scene.remove(p.mesh);
-    if (p.outlineWrapper) scene.remove(p.outlineWrapper);
+    disposeTree(p.mesh);
+    if (p.outlineWrapper) {
+      scene.remove(p.outlineWrapper);
+      disposeTree(p.outlineWrapper);
+    }
   });
   placed.length = 0;
   state.forEach(d => {
@@ -1747,6 +1763,41 @@ function exportPNG() {
   toast('Exported PNG');
 }
 
+// ============================================================
+// Share via URL — encode the layout into the hash, copy to clipboard
+// ============================================================
+function encodeLayoutToHash(layout) {
+  const json = JSON.stringify(layout);
+  return btoa(unescape(encodeURIComponent(json)))
+    .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
+}
+function decodeHashToLayout(hash) {
+  if (!hash) return null;
+  hash = hash.replace(/^#/, '').replace(/^layout=/, '');
+  if (!hash) return null;
+  try {
+    const padded = hash.replace(/-/g, '+').replace(/_/g, '/');
+    const json = decodeURIComponent(escape(atob(padded + '==='.slice((padded.length + 3) % 4))));
+    const data = JSON.parse(json);
+    if (Array.isArray(data)) return data;
+  } catch (_) {}
+  return null;
+}
+
+async function shareLayout() {
+  const data = snapshotLayout();
+  if (!data.length) { toast('Nothing to share'); return; }
+  const url = `${location.origin}${location.pathname}#layout=${encodeLayoutToHash(data)}`;
+  try {
+    await navigator.clipboard.writeText(url);
+    toast(`Link copied · ${data.length} items`);
+  } catch (_) {
+    // Fallback: just put it in the URL bar so the user can copy manually
+    history.replaceState(null, '', url);
+    toast('Link in URL bar — copy to share');
+  }
+}
+
 // Helpers used by sliders, step buttons, presets, and gestures
 function applyRotationToSelection(rad, opts) {
   if (!selection) return;
@@ -1766,6 +1817,7 @@ function applyScaleToSelection(scale, opts) {
   // Rebuild outline ring at the new size
   if (selection.outlineWrapper) {
     scene.remove(selection.outlineWrapper);
+    disposeTree(selection.outlineWrapper);
     selection.outline = null; selection.outlineWrapper = null;
     setOutline(selection, true);
   }
@@ -1839,7 +1891,11 @@ document.getElementById('duplicate-btn').addEventListener('click', duplicateSele
 function deleteSelected() {
   if (!selection) return;
   scene.remove(selection.mesh);
-  if (selection.outlineWrapper) scene.remove(selection.outlineWrapper);
+  disposeTree(selection.mesh);
+  if (selection.outlineWrapper) {
+    scene.remove(selection.outlineWrapper);
+    disposeTree(selection.outlineWrapper);
+  }
   placed.splice(placed.indexOf(selection), 1);
   selectItem(null);
   pushHistory();
@@ -1850,7 +1906,11 @@ document.getElementById('clear-btn').addEventListener('click', () => {
   if (!confirm(`Clear all ${placed.length} placed items?`)) return;
   placed.forEach(p => {
     scene.remove(p.mesh);
-    if (p.outlineWrapper) scene.remove(p.outlineWrapper);
+    disposeTree(p.mesh);
+    if (p.outlineWrapper) {
+      scene.remove(p.outlineWrapper);
+      disposeTree(p.outlineWrapper);
+    }
   });
   placed.length = 0;
   selectItem(null);
@@ -1882,6 +1942,7 @@ const layoutStore = {
 };
 
 document.getElementById('export-btn').addEventListener('click', exportPNG);
+document.getElementById('share-btn').addEventListener('click', shareLayout);
 
 // Initialize snap-btn from persisted state, then bind toggle
 setSnap(snapEnabled);
@@ -1948,12 +2009,20 @@ function scheduleAutosave() {
   }, 250);
 }
 
-// Attempt to load saved layout
+// Attempt to load: shared layout from URL hash takes priority over local autosave
 (async () => {
   try {
-    const r = await layoutStore.get();
-    if (r && r.value) {
-      const data = JSON.parse(r.value);
+    let data = decodeHashToLayout(location.hash);
+    let fromShare = !!data;
+    if (fromShare) {
+      // Don't keep the (long) hash sticking around — clear it so refreshes
+      // pick up the user's own autosave going forward.
+      history.replaceState(null, '', location.pathname);
+    } else {
+      const r = await layoutStore.get();
+      if (r && r.value) data = JSON.parse(r.value);
+    }
+    if (data && data.length) {
       data.forEach(d => {
         const builder = PLACEABLES[d.kind]?.build;
         if (!builder) return;
@@ -1964,7 +2033,7 @@ function scheduleAutosave() {
         scene.add(mesh);
         placed.push({ kind: d.kind, mesh });
       });
-      if (data.length) toast(`Loaded · ${data.length} items`);
+      toast(fromShare ? `Loaded shared · ${data.length} items` : `Loaded · ${data.length} items`);
       pushHistory();
     }
   } catch (e) { /* storage not available */ }
