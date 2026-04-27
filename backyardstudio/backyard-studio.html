@@ -1859,7 +1859,9 @@ canvas.addEventListener('touchmove', e => {
       const factor = lastTouchDist / d;
       cam.radius = Math.max(8, Math.min(180, cam.radius * factor));
     }
-    // Two-finger pan
+    // Two-finger center motion: horizontal = lateral pan, vertical = tilt
+    // (matches iOS Maps: drag two fingers up to tilt to a more horizontal view,
+    // drag down to flatten back to top-down).
     const center = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
     if (lastTouchCenter) {
       const dx = center.x - lastTouchCenter.x, dy = center.y - lastTouchCenter.y;
@@ -1868,7 +1870,9 @@ canvas.addEventListener('touchmove', e => {
       forward.y = 0; forward.normalize();
       const right = new T.Vector3().crossVectors(forward, new T.Vector3(0, 1, 0));
       target.addScaledVector(right, -dx * speed);
-      target.addScaledVector(forward, dy * speed);
+      // Tilt: drag up (dy<0) → phi increases → camera tilts toward horizontal
+      const dPhi = -dy * 0.006;
+      cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + dPhi));
     }
     // Two-finger twist → rotate camera around vertical axis
     const angle = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
