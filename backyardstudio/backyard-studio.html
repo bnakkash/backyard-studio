@@ -628,7 +628,10 @@
       <button class="preset-btn" data-scale="200">2×</button>
     </div>
     <div style="height:12px"></div>
-    <button class="btn danger" id="delete-btn" style="width:100%">Remove</button>
+    <div class="btn-row">
+      <button class="btn" id="duplicate-btn">Duplicate</button>
+      <button class="btn danger" id="delete-btn">Remove</button>
+    </div>
   </div>
   <div class="section">
     <div class="section-label">Layout</div>
@@ -652,7 +655,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v18</div>
+<div id="version">v19</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1831,6 +1834,7 @@ function setSelectionSheetVisible(visible) {
 }
 
 document.getElementById('delete-btn').addEventListener('click', deleteSelected);
+document.getElementById('duplicate-btn').addEventListener('click', duplicateSelected);
 
 function deleteSelected() {
   if (!selection) return;
