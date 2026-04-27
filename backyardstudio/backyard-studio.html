@@ -1811,14 +1811,17 @@ function startInertia() {
   inertiaRAF = requestAnimationFrame(step);
 }
 
-// Apple Maps-style gesture lock: once the user commits to twist (yaw),
-// further tilt input is suppressed for the rest of the two-finger gesture,
-// and vice versa. Pinch-to-zoom remains independent.
-let twoFingerMode = null; // null | 'tilt' | 'twist'
-let cumTilt = 0;          // accumulated |dy| since gesture began (px)
-let cumTwist = 0;         // accumulated |dAngle| since gesture began (rad)
-const TILT_LOCK_PX = 10;
-const TWIST_LOCK_RAD = 0.08; // ~4.6°
+// Two-finger gesture "gearbox": pinch, tilt and twist are mutually exclusive.
+// Until the user clearly commits to one of the three (passes its threshold),
+// nothing happens — the camera doesn't budge for tiny accidental motions.
+// To switch, lift both fingers and start a new gesture.
+let twoFingerMode = null; // null | 'pinch' | 'tilt' | 'twist'
+let cumTilt = 0;          // accumulated |dy| (px)
+let cumTwist = 0;         // accumulated |dAngle| (rad)
+let cumPinch = 0;         // accumulated |Δ finger distance| (px)
+const TILT_LOCK_PX = 14;
+const TWIST_LOCK_RAD = 0.10; // ~5.7°
+const PINCH_LOCK_PX = 14;
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -1827,6 +1830,7 @@ canvas.addEventListener('touchstart', e => {
   twoFingerMode = null;
   cumTilt = 0;
   cumTwist = 0;
+  cumPinch = 0;
   if (e.touches.length === 1) {
     const t = e.touches[0];
     lastMouse = { x: t.clientX, y: t.clientY };
@@ -1874,35 +1878,45 @@ canvas.addEventListener('touchmove', e => {
     const center = { x: (a.clientX + b.clientX) / 2, y: (a.clientY + b.clientY) / 2 };
     const angle = Math.atan2(b.clientY - a.clientY, b.clientX - a.clientX);
 
-    // Compute frame deltas first so the lock decision uses real motion.
-    let dy = 0, dAngle = 0;
+    // Compute frame deltas first so the gearbox sees real motion.
+    let dy = 0, dAngle = 0, dPinch = 0;
     if (lastTouchCenter) dy = center.y - lastTouchCenter.y;
+    if (lastTouchDist) dPinch = d - lastTouchDist;
     if (lastTouchAngle !== null) {
       dAngle = angle - lastTouchAngle;
       if (dAngle > Math.PI) dAngle -= 2 * Math.PI;
       else if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
     }
 
-    // Yaw / tilt lock — Apple Maps style. Once one direction passes its
-    // threshold, the other is suppressed for the rest of the gesture.
+    // Gearbox: accumulate motion in each axis. The first to pass its
+    // threshold wins and locks for the rest of the gesture; the others
+    // stay quiet until both fingers lift.
     cumTilt += Math.abs(dy);
     cumTwist += Math.abs(dAngle);
-    if (twoFingerMode === null && (cumTilt > TILT_LOCK_PX || cumTwist > TWIST_LOCK_RAD)) {
-      twoFingerMode = (cumTwist / TWIST_LOCK_RAD) > (cumTilt / TILT_LOCK_PX) ? 'twist' : 'tilt';
+    cumPinch += Math.abs(dPinch);
+    if (twoFingerMode === null) {
+      const tiltScore = cumTilt / TILT_LOCK_PX;
+      const twistScore = cumTwist / TWIST_LOCK_RAD;
+      const pinchScore = cumPinch / PINCH_LOCK_PX;
+      const max = Math.max(tiltScore, twistScore, pinchScore);
+      if (max > 1) {
+        twoFingerMode = max === pinchScore ? 'pinch'
+                      : max === twistScore ? 'twist'
+                      : 'tilt';
+      }
     }
 
-    // Pinch-zoom — always allowed
-    if (lastTouchDist) {
+    // Apply only the locked function.
+    if (twoFingerMode === 'pinch' && lastTouchDist) {
       cam.radius = Math.max(8, Math.min(180, cam.radius * (lastTouchDist / d)));
     }
     // Tilt: drag up (dy<0) → phi increases → camera tilts toward horizontal
-    if (twoFingerMode !== 'twist' && lastTouchCenter) {
+    if (twoFingerMode === 'tilt' && lastTouchCenter) {
       const dPhi = -dy * 0.006;
       cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + dPhi));
     }
-    // Twist → rotate camera around vertical axis. Damped so finger drift
-    // during a pinch doesn't spin the camera wildly.
-    if (twoFingerMode !== 'tilt' && lastTouchAngle !== null) {
+    // Twist → rotate camera around vertical axis
+    if (twoFingerMode === 'twist' && lastTouchAngle !== null) {
       cam.theta -= dAngle * 0.6;
     }
     lastTouchDist = d;
