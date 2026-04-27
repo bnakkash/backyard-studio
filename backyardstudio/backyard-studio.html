@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v23</div>
+<div id="version">v24</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2212,10 +2212,10 @@ canvas.addEventListener('mousedown', e => {
     mouseState = 'left';
     if (!selectedKind) {
       const hit = pickPlaced(e);
-      if (hit) {
-        dragItem = hit;
-        selectItem(hit);
-      }
+      // Only the already-selected item is grabbable for drag. New items
+      // get selected on tap-release. This stops the camera pan from being
+      // hijacked into moving whatever happened to be under your cursor.
+      if (hit && hit === selection) dragItem = hit;
     }
   } else if (e.button === 2) {
     mouseState = 'right';
@@ -2235,9 +2235,11 @@ window.addEventListener('mouseup', e => {
       if (selectedKind && dur < 300) {
         const pt = groundPick(e);
         if (pt) placeItem(selectedKind, pt.x, pt.z);
-      } else if (!selectedKind && !dragItem) {
+      } else if (!selectedKind) {
+        // Tap-release selects the hit item (or deselects on miss). Works for
+        // both tapping a fresh item and re-tapping the already-selected one.
         const hit = pickPlaced(e);
-        if (!hit) selectItem(null);
+        selectItem(hit || null);
       }
     }
   } else if (mouseState === 'left' && dragItem) {
@@ -2364,12 +2366,12 @@ canvas.addEventListener('touchstart', e => {
     didDrag = false;
     dragVel.x = 0; dragVel.y = 0;
     if (!selectedKind) {
-      // Remember a candidate drag target but DON'T commit selection yet —
-      // the user might be about to put a second finger down for a 2-finger
-      // gesture (twist / tilt / pinch). Selection is promoted on tap-release
-      // or when a real one-finger drag begins.
+      // Only the already-selected item is grabbable for drag. New items
+      // get selected on tap-release. This stops a camera pan from being
+      // hijacked into moving whatever the touch happened to start on top of —
+      // the worst UX bug when the yard is dense.
       const hit = pickPlaced(t);
-      if (hit) dragItem = hit;
+      if (hit && hit === selection) dragItem = hit;
     }
     touchState = 'one';
   } else if (e.touches.length === 2) {
@@ -2497,9 +2499,11 @@ canvas.addEventListener('touchend', e => {
       const pt = groundPick(t);
       if (pt) placeItem(selectedKind, pt.x, pt.z);
     } else if (!selectedKind && dur < 300) {
-      // Brisk tap with no drag → commit the candidate or deselect.
-      if (dragItem) selectItem(dragItem);
-      else selectItem(null);
+      // Brisk tap with no drag → re-pick at release and select / deselect.
+      // (Can't trust the touchstart candidate: with the new model, dragItem
+      // only gets set when you tap the already-selected item.)
+      const hit = pickPlaced(t);
+      selectItem(hit || null);
     }
   } else if (touchState === 'one' && didDrag && dragItem && e.touches.length === 0) {
     // Item was dragged to a new position via touch — record it
