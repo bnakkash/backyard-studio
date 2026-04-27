@@ -1779,8 +1779,17 @@ let lastTouchAngle = null;
   document.addEventListener(ev, e => e.preventDefault())
 );
 
-// Orbit inertia (iOS-style flick-to-coast)
-let orbitVel = { theta: 0, phi: 0 };
+// Pan helper + flick-to-coast inertia (Apple Maps-style).
+function applyPan(dx, dy) {
+  const speed = cam.radius * 0.0018;
+  const forward = new T.Vector3();
+  camera.getWorldDirection(forward);
+  forward.y = 0; forward.normalize();
+  const right = new T.Vector3().crossVectors(forward, new T.Vector3(0, 1, 0));
+  target.addScaledVector(right, -dx * speed);
+  target.addScaledVector(forward, dy * speed);
+}
+let dragVel = { x: 0, y: 0 };
 let inertiaRAF = null;
 function stopInertia() {
   if (inertiaRAF !== null) { cancelAnimationFrame(inertiaRAF); inertiaRAF = null; }
@@ -1789,14 +1798,13 @@ function startInertia() {
   stopInertia();
   const friction = 0.93;
   const step = () => {
-    orbitVel.theta *= friction;
-    orbitVel.phi *= friction;
-    if (Math.abs(orbitVel.theta) < 0.0004 && Math.abs(orbitVel.phi) < 0.0004) {
+    dragVel.x *= friction;
+    dragVel.y *= friction;
+    if (Math.abs(dragVel.x) < 0.4 && Math.abs(dragVel.y) < 0.4) {
       inertiaRAF = null;
       return;
     }
-    cam.theta += orbitVel.theta;
-    cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + orbitVel.phi));
+    applyPan(dragVel.x, dragVel.y);
     updateCam();
     inertiaRAF = requestAnimationFrame(step);
   };
@@ -1811,7 +1819,7 @@ canvas.addEventListener('touchstart', e => {
     lastMouse = { x: t.clientX, y: t.clientY };
     dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
     didDrag = false;
-    orbitVel.theta = 0; orbitVel.phi = 0;
+    dragVel.x = 0; dragVel.y = 0;
     if (!selectedKind) {
       const hit = pickPlaced(t);
       if (hit) { dragItem = hit; selectItem(hit); }
@@ -1839,15 +1847,11 @@ canvas.addEventListener('touchmove', e => {
         if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
       }
     } else if (!dragItem) {
-      // Camera-grab orbit: drag your finger right → camera moves right
-      // around the scene, drag down → camera comes down toward horizon.
-      const dTheta = -dx * 0.008;
-      const dPhi = dy * 0.008;
-      cam.theta += dTheta;
-      cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + dPhi));
-      // Exponential moving average for velocity → feels like physical momentum
-      orbitVel.theta = orbitVel.theta * 0.25 + dTheta * 0.75;
-      orbitVel.phi = orbitVel.phi * 0.25 + dPhi * 0.75;
+      // Apple Maps-style: one-finger drag pans the map.
+      applyPan(dx, dy);
+      // EMA velocity → momentum on release
+      dragVel.x = dragVel.x * 0.25 + dx * 0.75;
+      dragVel.y = dragVel.y * 0.25 + dy * 0.75;
       updateCam();
     }
     lastMouse = { x: t.clientX, y: t.clientY };
@@ -1909,7 +1913,7 @@ canvas.addEventListener('touchend', e => {
     pushHistory();
   } else if (touchState === 'one' && didDrag && !dragItem && e.touches.length === 0) {
     // Flick-to-coast on release
-    if (Math.hypot(orbitVel.theta, orbitVel.phi) > 0.003) startInertia();
+    if (Math.hypot(dragVel.x, dragVel.y) > 2) startInertia();
   }
 
   // 2 → 1 finger: switch to one-finger mode using the remaining finger
@@ -1918,7 +1922,7 @@ canvas.addEventListener('touchend', e => {
     lastMouse = { x: t.clientX, y: t.clientY };
     dragStart = { x: t.clientX, y: t.clientY };
     didDrag = false;
-    orbitVel.theta = 0; orbitVel.phi = 0;
+    dragVel.x = 0; dragVel.y = 0;
     touchState = 'one';
     lastTouchDist = null;
     lastTouchCenter = null;
@@ -1943,7 +1947,7 @@ canvas.addEventListener('touchcancel', () => {
   lastTouchDist = null;
   lastTouchCenter = null;
   lastTouchAngle = null;
-  orbitVel.theta = 0; orbitVel.phi = 0;
+  dragVel.x = 0; dragVel.y = 0;
 });
 
 // ===== Picking =====
