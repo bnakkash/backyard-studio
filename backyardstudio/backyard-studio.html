@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v21</div>
+<div id="version">v22</div>
 
 <div id="help">
   <kbd>drag</kbd> rotate &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2364,11 +2364,18 @@ canvas.addEventListener('touchstart', e => {
     didDrag = false;
     dragVel.x = 0; dragVel.y = 0;
     if (!selectedKind) {
+      // Remember a candidate drag target but DON'T commit selection yet —
+      // the user might be about to put a second finger down for a 2-finger
+      // gesture (twist / tilt / pinch). Selection is promoted on tap-release
+      // or when a real one-finger drag begins.
       const hit = pickPlaced(t);
-      if (hit) { dragItem = hit; selectItem(hit); }
+      if (hit) dragItem = hit;
     }
     touchState = 'one';
   } else if (e.touches.length === 2) {
+    // 2nd finger landed before the 1st was released — clearly a gesture,
+    // not an item interaction. Drop any pending drag candidate.
+    dragItem = null;
     touchState = 'two';
     const a = e.touches[0], b = e.touches[1];
     lastTouchDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
@@ -2384,6 +2391,9 @@ canvas.addEventListener('touchmove', e => {
     const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
     if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) didDrag = true;
     if (dragItem && didDrag) {
+      // First time a real drag actually starts, promote the candidate to
+      // an actual selection so the outline ring shows.
+      if (selection !== dragItem) selectItem(dragItem);
       const pt = groundPick(t);
       if (pt) {
         dragItem.mesh.position.set(snap(pt.x), 0, snap(pt.z));
@@ -2474,9 +2484,10 @@ canvas.addEventListener('touchend', e => {
     if (selectedKind && dur < 300) {
       const pt = groundPick(t);
       if (pt) placeItem(selectedKind, pt.x, pt.z);
-    } else if (!selectedKind && !dragItem) {
-      const hit = pickPlaced(t);
-      if (!hit) selectItem(null);
+    } else if (!selectedKind && dur < 300) {
+      // Brisk tap with no drag → commit the candidate or deselect.
+      if (dragItem) selectItem(dragItem);
+      else selectItem(null);
     }
   } else if (touchState === 'one' && didDrag && dragItem && e.touches.length === 0) {
     // Item was dragged to a new position via touch — record it
