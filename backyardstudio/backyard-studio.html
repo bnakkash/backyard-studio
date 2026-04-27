@@ -353,6 +353,11 @@
     color: var(--text-dim);
     cursor: pointer;
     transition: filter 0.15s;
+    background: transparent;
+    border: none;
+    padding: 0;
+    -webkit-appearance: none;
+    appearance: none;
   }
   #compass:hover { filter: brightness(1.15); }
   #compass:active { filter: brightness(0.85); }
@@ -483,10 +488,10 @@
 </button>
 <div id="mobile-backdrop"></div>
 
-<div id="compass">
+<button id="compass" type="button" aria-label="Face north">
   <div class="ring"></div>
   <span class="n">N</span>
-</div>
+</button>
 
 <div id="left-panel" class="panel">
   <div class="panel-header">
@@ -1924,6 +1929,11 @@ function faceNorth() {
 }
 
 compassEl.addEventListener('click', faceNorth);
+// iOS Safari sometimes drops click on home-screen PWAs; bind touch as backup
+compassEl.addEventListener('touchend', (e) => {
+  e.preventDefault();
+  faceNorth();
+}, { passive: false });
 
 // ============================================================
 // Render loop
@@ -1939,12 +1949,23 @@ animate();
 setTimeout(() => toast('Welcome · drag to orbit, pick a plant or feature to place'), 300);
 
 // ============================================================
-// PWA: register service worker for offline + installable home-screen
+// PWA: register service worker for offline + installable home-screen.
+// Auto-reloads when a new SW takes over, so updates propagate without
+// requiring users to manually clear their cache.
 // (skipped on file:// because SW requires http(s) or localhost)
 // ============================================================
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('sw.js').catch(() => { /* offline support unavailable */ });
+  window.addEventListener('load', async () => {
+    try {
+      const reg = await navigator.serviceWorker.register('sw.js');
+      // Reload the page once a new SW takes control of it (only after
+      // the first install — the very first SW shouldn't trigger a reload).
+      let firstControl = !navigator.serviceWorker.controller;
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (firstControl) { firstControl = false; return; }
+        window.location.reload();
+      });
+    } catch (_) { /* offline support unavailable */ }
   });
 }
 </script>
