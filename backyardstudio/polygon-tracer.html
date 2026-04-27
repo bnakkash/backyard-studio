@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#12150e">
+<title>Polygon Tracer</title>
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12150e;
+    --panel: #1c2118;
+    --panel-hi: #262c21;
+    --border: #353c2c;
+    --text: #f2ede0;
+    --text-dim: #9ea290;
+    --accent: #d4a574;
+    --accent-hi: #e6bb83;
+    --danger: #c86a5b;
+  }
+  * {
+    box-sizing: border-box; margin: 0; padding: 0;
+    -webkit-tap-highlight-color: transparent;
+  }
+  html, body {
+    height: 100%; overflow: hidden;
+    user-select: none; -webkit-user-select: none; -webkit-touch-callout: none;
+    overscroll-behavior: none;
+    background: var(--bg); color: var(--text);
+    font-family: 'Manrope', system-ui, sans-serif;
+  }
+  body {
+    display: flex; flex-direction: column;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+
+  #header {
+    padding: 14px 18px 12px;
+    border-bottom: 1px solid var(--border);
+    background: rgba(28, 33, 24, 0.94);
+    backdrop-filter: blur(14px);
+    display: flex; align-items: center; gap: 14px;
+    flex-shrink: 0;
+  }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 18px; font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  h1 .dot {
+    display: inline-block;
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 8px;
+    vertical-align: middle;
+    margin-bottom: 2px;
+  }
+  .sub {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.2em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-left: auto;
+  }
+
+  #stage {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #0a0d07;
+    touch-action: none;
+  }
+  #stage canvas {
+    position: absolute;
+    top: 0; left: 0;
+    touch-action: none;
+  }
+
+  #empty-state {
+    position: absolute; inset: 0;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    padding: 30px;
+    text-align: center;
+    gap: 14px;
+  }
+  #empty-state p {
+    font-size: 14px; color: var(--text-dim);
+    line-height: 1.55;
+    max-width: 300px;
+  }
+  #upload-btn {
+    padding: 12px 24px;
+    background: var(--accent);
+    color: #1a1a1a;
+    border: none;
+    border-radius: 3px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    letter-spacing: 0.02em;
+  }
+  #upload-btn:active { background: var(--accent-hi); }
+  #file-input { display: none; }
+
+  #toolbar {
+    flex-shrink: 0;
+    border-top: 1px solid var(--border);
+    background: rgba(28, 33, 24, 0.94);
+    backdrop-filter: blur(14px);
+    padding: 10px 14px;
+    display: flex; gap: 8px;
+    align-items: center;
+  }
+  .tool-btn {
+    padding: 9px 12px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    cursor: pointer;
+    font-weight: 500;
+  }
+  .tool-btn:active { background: var(--panel-hi); }
+  .tool-btn.primary {
+    background: var(--accent);
+    color: #1a1a1a;
+    border-color: var(--accent);
+  }
+  .tool-btn.primary:active { background: var(--accent-hi); }
+  .tool-btn.danger { border-color: rgba(200,106,91,0.4); color: var(--danger); }
+  .count {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    margin-left: auto;
+  }
+  .count b { color: var(--accent); }
+
+  .mode-switch {
+    display: flex;
+    gap: 2px;
+    background: rgba(10, 13, 7, 0.4);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 2px;
+  }
+  .mode-btn {
+    padding: 7px 10px;
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    cursor: pointer;
+  }
+  .mode-btn.active {
+    background: var(--accent);
+    color: #1a1a1a;
+  }
+
+  #output-panel {
+    display: none;
+    position: absolute;
+    inset: 0;
+    background: rgba(10, 13, 7, 0.96);
+    backdrop-filter: blur(20px);
+    z-index: 50;
+    padding: 20px;
+    flex-direction: column;
+    gap: 14px;
+  }
+  #output-panel.show { display: flex; }
+  #output-panel h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 20px; font-weight: 500;
+  }
+  #output-panel .hint {
+    font-size: 13px; color: var(--text-dim); line-height: 1.55;
+  }
+  #output-text {
+    flex: 1;
+    background: #0a0d07;
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 14px;
+    border-radius: 3px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px;
+    line-height: 1.6;
+    resize: none;
+    width: 100%;
+  }
+  #output-panel .actions {
+    display: flex; gap: 8px;
+  }
+
+  #toast {
+    position: absolute;
+    top: 70px; left: 50%;
+    transform: translateX(-50%) translateY(-10px);
+    background: rgba(28,33,24,0.96);
+    border: 1px solid var(--accent);
+    padding: 9px 18px;
+    border-radius: 2px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10.5px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 60;
+  }
+  #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+</style>
+</head>
+<body>
+
+<div id="header">
+  <h1><span class="dot"></span>Polygon Tracer</h1>
+  <span class="sub">Trace your fence</span>
+</div>
+
+<div id="stage">
+  <canvas id="canvas"></canvas>
+  <div id="empty-state">
+    <p>Upload a top-down photo of your property (aerial screenshot from Maps works great), then tap each fence corner in order to build the polygon.</p>
+    <button id="upload-btn">Upload Photo</button>
+    <input type="file" id="file-input" accept="image/*">
+  </div>
+</div>
+
+<div id="toolbar" style="display: none;" id="toolbar-actual">
+  <div class="mode-switch">
+    <button class="mode-btn active" data-mode="yard">Yard</button>
+    <button class="mode-btn" data-mode="house">House</button>
+  </div>
+  <button class="tool-btn" id="undo-btn">Undo</button>
+  <button class="tool-btn" id="fit-btn">Fit</button>
+  <button class="tool-btn danger" id="clear-btn">Clear</button>
+  <button class="tool-btn" id="new-photo-btn">New Photo</button>
+  <span class="count"><b id="vertex-count">0</b> vertices</span>
+  <button class="tool-btn primary" id="export-btn">Export</button>
+</div>
+
+<div id="output-panel">
+  <h2>Your polygon coords</h2>
+  <p class="hint">Copy this and send it back in the chat. These are UV coordinates (0..1) mapped to your photo — I'll bake them into the Backyard Studio.</p>
+  <textarea id="output-text" readonly></textarea>
+  <div class="actions">
+    <button class="tool-btn" id="close-output">Back</button>
+    <button class="tool-btn primary" id="copy-btn">Copy to clipboard</button>
+  </div>
+</div>
+
+<div id="toast"></div>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+const stage = document.getElementById('stage');
+const emptyState = document.getElementById('empty-state');
+const toolbar = document.getElementById('toolbar');
+const fileInput = document.getElementById('file-input');
+const uploadBtn = document.getElementById('upload-btn');
+const vertexCountEl = document.getElementById('vertex-count');
+const toastEl = document.getElementById('toast');
+
+let img = null;
+let imgDisplay = { x: 0, y: 0, w: 0, h: 0 };   // where image is drawn on canvas (base fit)
+let yardVertices = [];                           // yard polygon (UV 0..1)
+let houseVertices = [];                          // house footprint polygon (UV 0..1)
+let mode = 'yard';                               // 'yard' | 'house'
+let vertices = yardVertices;                     // active vertex array (alias)
+let draggingIdx = -1;
+
+// Zoom/pan state: view = (point on canvas) = (point in image) * zoom + pan
+let zoom = 1;
+let pan = { x: 0, y: 0 };
+const MIN_ZOOM = 1;
+const MAX_ZOOM = 8;
+
+function toast(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toast._t);
+  toast._t = setTimeout(() => toastEl.classList.remove('show'), 1600);
+}
+
+function resizeCanvas() {
+  const dpr = window.devicePixelRatio || 1;
+  const rect = stage.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  canvas.style.width = rect.width + 'px';
+  canvas.style.height = rect.height + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  fitImage();
+  draw();
+}
+
+function fitImage() {
+  if (!img) return;
+  const rect = stage.getBoundingClientRect();
+  const imgRatio = img.width / img.height;
+  const stageRatio = rect.width / rect.height;
+  let w, h;
+  if (imgRatio > stageRatio) {
+    w = rect.width; h = w / imgRatio;
+  } else {
+    h = rect.height; w = h * imgRatio;
+  }
+  imgDisplay = {
+    x: (rect.width - w) / 2,
+    y: (rect.height - h) / 2,
+    w, h,
+  };
+}
+
+// Convert canvas (viewport) coords → UV (image-space 0..1)
+function canvasToUV(cx, cy) {
+  // Reverse pan+zoom to get image-draw-space coords
+  const imgX = (cx - pan.x) / zoom;
+  const imgY = (cy - pan.y) / zoom;
+  return [
+    (imgX - imgDisplay.x) / imgDisplay.w,
+    (imgY - imgDisplay.y) / imgDisplay.h,
+  ];
+}
+// UV → canvas
+function uvToCanvas(u, v) {
+  const imgX = imgDisplay.x + u * imgDisplay.w;
+  const imgY = imgDisplay.y + v * imgDisplay.h;
+  return [imgX * zoom + pan.x, imgY * zoom + pan.y];
+}
+
+// Clamp pan so the image can't be dragged out of the viewport entirely
+function clampPan() {
+  const rect = stage.getBoundingClientRect();
+  const imgW = imgDisplay.w * zoom;
+  const imgH = imgDisplay.h * zoom;
+  const imgLeft = imgDisplay.x * zoom + pan.x;
+  const imgTop = imgDisplay.y * zoom + pan.y;
+  // Keep at least 40px of image visible on each side
+  const margin = 40;
+  const minPanX = margin - imgDisplay.x * zoom - imgW;
+  const maxPanX = rect.width - margin - imgDisplay.x * zoom;
+  const minPanY = margin - imgDisplay.y * zoom - imgH;
+  const maxPanY = rect.height - margin - imgDisplay.y * zoom;
+  pan.x = Math.max(minPanX, Math.min(maxPanX, pan.x));
+  pan.y = Math.max(minPanY, Math.min(maxPanY, pan.y));
+}
+
+function draw() {
+  const rect = stage.getBoundingClientRect();
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if (!img) return;
+
+  // Draw image with zoom/pan transform
+  ctx.save();
+  ctx.translate(pan.x, pan.y);
+  ctx.scale(zoom, zoom);
+  ctx.drawImage(img, imgDisplay.x, imgDisplay.y, imgDisplay.w, imgDisplay.h);
+  ctx.restore();
+
+  // Dim outside the yard polygon
+  if (yardVertices.length >= 3) {
+    ctx.save();
+    ctx.fillStyle = 'rgba(10, 13, 7, 0.4)';
+    ctx.beginPath();
+    ctx.rect(0, 0, rect.width, rect.height);
+    ctx.moveTo(...uvToCanvas(...yardVertices[yardVertices.length - 1]));
+    for (let i = yardVertices.length - 2; i >= 0; i--) {
+      ctx.lineTo(...uvToCanvas(...yardVertices[i]));
+    }
+    ctx.closePath();
+    ctx.fill('evenodd');
+    ctx.restore();
+  }
+
+  drawPolygon(yardVertices, '#d4a574', mode === 'yard');
+  drawPolygon(houseVertices, '#8fb8ff', mode === 'house');
+}
+
+function drawPolygon(verts, color, active) {
+  if (verts.length === 0) return;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = active ? 2.5 : 1.5;
+  ctx.globalAlpha = active ? 1 : 0.55;
+  ctx.beginPath();
+  verts.forEach(([u, v], i) => {
+    const [x, y] = uvToCanvas(u, v);
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  if (verts.length >= 3) {
+    ctx.closePath();
+    ctx.fillStyle = color + '22'; // ~13% alpha hex
+    ctx.fill();
+  }
+  ctx.stroke();
+  ctx.restore();
+
+  // Vertex dots — fixed screen size
+  verts.forEach(([u, v], i) => {
+    const [x, y] = uvToCanvas(u, v);
+    ctx.save();
+    ctx.globalAlpha = active ? 1 : 0.55;
+    ctx.fillStyle = color;
+    ctx.strokeStyle = '#1a1a1a';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.arc(x, y, active ? 9 : 6, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.stroke();
+    if (active) {
+      ctx.fillStyle = '#1a1a1a';
+      ctx.font = 'bold 11px Manrope, sans-serif';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(String(i + 1), x, y + 0.5);
+    }
+    ctx.restore();
+  });
+}
+
+function findVertexAt(cx, cy) {
+  for (let i = 0; i < vertices.length; i++) {
+    const [x, y] = uvToCanvas(...vertices[i]);
+    if (Math.hypot(cx - x, cy - y) < 18) return i;
+  }
+  return -1;
+}
+
+function getPt(clientX, clientY) {
+  const rect = canvas.getBoundingClientRect();
+  return [clientX - rect.left, clientY - rect.top];
+}
+
+// ─── Gesture state ───────────────────────────────────
+let gestureMode = null;  // 'vertex' | 'pan' | 'pinch' | null
+let lastPan = null;
+let pinchStart = null;
+let didDrag = false;
+let downPt = null;
+
+function onTouchStart(e) {
+  if (!img) return;
+  e.preventDefault();
+
+  if (e.touches.length === 1) {
+    const [cx, cy] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    downPt = { x: cx, y: cy };
+    didDrag = false;
+    draggingIdx = findVertexAt(cx, cy);
+    gestureMode = draggingIdx >= 0 ? 'vertex' : 'pan';
+    lastPan = { x: cx, y: cy };
+  } else if (e.touches.length === 2) {
+    const [ax, ay] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    const [bx, by] = getPt(e.touches[1].clientX, e.touches[1].clientY);
+    gestureMode = 'pinch';
+    pinchStart = {
+      dist: Math.hypot(bx - ax, by - ay),
+      center: { x: (ax + bx) / 2, y: (ay + by) / 2 },
+      zoom: zoom,
+      pan: { x: pan.x, y: pan.y },
+    };
+    // Cancel any in-progress vertex drag
+    draggingIdx = -1;
+  }
+}
+
+function onTouchMove(e) {
+  if (!img) return;
+  e.preventDefault();
+
+  if (gestureMode === 'vertex' && e.touches.length === 1 && draggingIdx >= 0) {
+    const [cx, cy] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    if (!didDrag && Math.hypot(cx - downPt.x, cy - downPt.y) > 5) didDrag = true;
+    if (didDrag) {
+      const [u, v] = canvasToUV(cx, cy);
+      vertices[draggingIdx] = [
+        Math.max(0, Math.min(1, u)),
+        Math.max(0, Math.min(1, v)),
+      ];
+      draw();
+    }
+  } else if (gestureMode === 'pan' && e.touches.length === 1) {
+    const [cx, cy] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    if (!didDrag && Math.hypot(cx - downPt.x, cy - downPt.y) > 5) didDrag = true;
+    if (didDrag && zoom > 1.001) {  // only pan when zoomed in
+      pan.x += cx - lastPan.x;
+      pan.y += cy - lastPan.y;
+      clampPan();
+      draw();
+    }
+    lastPan = { x: cx, y: cy };
+  } else if (gestureMode === 'pinch' && e.touches.length === 2 && pinchStart) {
+    const [ax, ay] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    const [bx, by] = getPt(e.touches[1].clientX, e.touches[1].clientY);
+    const dist = Math.hypot(bx - ax, by - ay);
+    const center = { x: (ax + bx) / 2, y: (ay + by) / 2 };
+
+    // Zoom around the starting pinch center (anchored), then translate by pinch drift
+    const scale = dist / pinchStart.dist;
+    const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, pinchStart.zoom * scale));
+    const actualScale = newZoom / pinchStart.zoom;
+
+    // Keep the pinch anchor point stable under the fingers
+    const anchorX = pinchStart.center.x;
+    const anchorY = pinchStart.center.y;
+    pan.x = anchorX - (anchorX - pinchStart.pan.x) * actualScale + (center.x - anchorX);
+    pan.y = anchorY - (anchorY - pinchStart.pan.y) * actualScale + (center.y - anchorY);
+    zoom = newZoom;
+    clampPan();
+    draw();
+  }
+}
+
+function onTouchEnd(e) {
+  if (!img) return;
+
+  // Tap to add vertex (empty space, one finger, no drag)
+  if (gestureMode === 'pan' && !didDrag && e.changedTouches.length > 0 && e.touches.length === 0) {
+    const t = e.changedTouches[0];
+    const [cx, cy] = getPt(t.clientX, t.clientY);
+    const [u, v] = canvasToUV(cx, cy);
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      vertices.push([u, v]);
+      updateCount();
+      draw();
+    }
+  }
+
+  // 2→1 finger: continue with the remaining finger as pan
+  if (gestureMode === 'pinch' && e.touches.length === 1) {
+    const [cx, cy] = getPt(e.touches[0].clientX, e.touches[0].clientY);
+    gestureMode = 'pan';
+    downPt = { x: cx, y: cy };
+    lastPan = { x: cx, y: cy };
+    didDrag = true;  // prevent tap-to-add after pinch
+    pinchStart = null;
+    return;
+  }
+
+  if (e.touches.length === 0) {
+    gestureMode = null;
+    draggingIdx = -1;
+    didDrag = false;
+    downPt = null;
+    lastPan = null;
+    pinchStart = null;
+  }
+}
+
+// Wire up touch events
+canvas.addEventListener('touchstart', onTouchStart, { passive: false });
+canvas.addEventListener('touchmove', onTouchMove, { passive: false });
+canvas.addEventListener('touchend', onTouchEnd);
+canvas.addEventListener('touchcancel', () => {
+  gestureMode = null; draggingIdx = -1; didDrag = false;
+  downPt = null; lastPan = null; pinchStart = null;
+});
+
+// Mouse equivalents — scroll to zoom, drag to pan when not on vertex
+canvas.addEventListener('mousedown', e => {
+  if (!img) return;
+  const [cx, cy] = getPt(e.clientX, e.clientY);
+  downPt = { x: cx, y: cy };
+  didDrag = false;
+  draggingIdx = findVertexAt(cx, cy);
+  gestureMode = draggingIdx >= 0 ? 'vertex' : 'pan';
+  lastPan = { x: cx, y: cy };
+});
+window.addEventListener('mousemove', e => {
+  if (!img || gestureMode === null) return;
+  const [cx, cy] = getPt(e.clientX, e.clientY);
+  if (gestureMode === 'vertex' && draggingIdx >= 0) {
+    if (!didDrag && Math.hypot(cx - downPt.x, cy - downPt.y) > 5) didDrag = true;
+    if (didDrag) {
+      const [u, v] = canvasToUV(cx, cy);
+      vertices[draggingIdx] = [Math.max(0, Math.min(1, u)), Math.max(0, Math.min(1, v))];
+      draw();
+    }
+  } else if (gestureMode === 'pan') {
+    if (!didDrag && Math.hypot(cx - downPt.x, cy - downPt.y) > 5) didDrag = true;
+    if (didDrag && zoom > 1.001) {
+      pan.x += cx - lastPan.x;
+      pan.y += cy - lastPan.y;
+      clampPan();
+      draw();
+    }
+    lastPan = { x: cx, y: cy };
+  }
+});
+window.addEventListener('mouseup', e => {
+  if (!img) return;
+  const [cx, cy] = getPt(e.clientX, e.clientY);
+  if (gestureMode === 'pan' && !didDrag) {
+    const [u, v] = canvasToUV(cx, cy);
+    if (u >= 0 && u <= 1 && v >= 0 && v <= 1) {
+      vertices.push([u, v]);
+      updateCount();
+      draw();
+    }
+  }
+  gestureMode = null; draggingIdx = -1; didDrag = false;
+});
+canvas.addEventListener('wheel', e => {
+  if (!img) return;
+  e.preventDefault();
+  const [cx, cy] = getPt(e.clientX, e.clientY);
+  const factor = Math.exp(-e.deltaY * 0.0015);
+  const newZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, zoom * factor));
+  const actualScale = newZoom / zoom;
+  // Anchor zoom at mouse cursor
+  pan.x = cx - (cx - pan.x) * actualScale;
+  pan.y = cy - (cy - pan.y) * actualScale;
+  zoom = newZoom;
+  clampPan();
+  draw();
+}, { passive: false });
+
+// Upload
+uploadBtn.addEventListener('click', () => fileInput.click());
+document.getElementById('new-photo-btn').addEventListener('click', () => {
+  if (vertices.length > 0 && !confirm('Clear vertices and upload a new photo?')) return;
+  fileInput.click();
+});
+fileInput.addEventListener('change', e => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = ev => {
+    const newImg = new Image();
+    newImg.onload = () => {
+      img = newImg;
+      yardVertices.length = 0;
+      houseVertices.length = 0;
+      mode = 'yard';
+      vertices = yardVertices;
+      document.querySelectorAll('.mode-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.mode === 'yard');
+      });
+      zoom = 1;
+      pan.x = 0; pan.y = 0;
+      updateCount();
+      emptyState.style.display = 'none';
+      toolbar.style.display = 'flex';
+      resizeCanvas();
+      toast('Tap corners · pinch to zoom');
+    };
+    newImg.src = ev.target.result;
+  };
+  reader.readAsDataURL(file);
+});
+
+// Toolbar
+document.getElementById('undo-btn').addEventListener('click', () => {
+  if (vertices.length === 0) return;
+  vertices.pop();
+  updateCount();
+  draw();
+});
+document.getElementById('fit-btn').addEventListener('click', () => {
+  zoom = 1;
+  pan.x = 0; pan.y = 0;
+  draw();
+});
+
+function updateCount() {
+  vertexCountEl.textContent = vertices.length;
+}
+
+document.querySelectorAll('.mode-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    mode = btn.dataset.mode;
+    vertices = (mode === 'yard') ? yardVertices : houseVertices;
+    updateCount();
+    toast(mode === 'yard' ? 'Tracing yard' : 'Tracing house');
+    draw();
+  });
+});
+document.getElementById('clear-btn').addEventListener('click', () => {
+  if (vertices.length === 0) return;
+  if (!confirm(`Clear all ${mode} vertices?`)) return;
+  vertices.length = 0;
+  updateCount();
+  draw();
+});
+
+// Export
+const outputPanel = document.getElementById('output-panel');
+const outputText = document.getElementById('output-text');
+document.getElementById('export-btn').addEventListener('click', () => {
+  if (yardVertices.length < 3) { toast('Yard needs 3+ vertices'); return; }
+  const fmt = (name, verts) => {
+    if (verts.length === 0) return '';
+    return `const ${name} = [\n` +
+      verts.map(([u, v]) => `  [${u.toFixed(4)}, ${v.toFixed(4)}],`).join('\n') +
+      '\n];\n';
+  };
+  let out = fmt('YARD_UV', yardVertices);
+  if (houseVertices.length >= 3) {
+    out += '\n' + fmt('HOUSE_UV', houseVertices);
+  }
+  outputText.value = out;
+  outputPanel.classList.add('show');
+});
+document.getElementById('close-output').addEventListener('click', () => {
+  outputPanel.classList.remove('show');
+});
+document.getElementById('copy-btn').addEventListener('click', () => {
+  outputText.select();
+  document.execCommand('copy');
+  if (navigator.clipboard) navigator.clipboard.writeText(outputText.value).catch(() => {});
+  toast('Copied');
+});
+
+window.addEventListener('resize', resizeCanvas);
+resizeCanvas();
+
+// Block iOS gestures
+['gesturestart', 'gesturechange', 'gestureend'].forEach(ev =>
+  document.addEventListener(ev, e => e.preventDefault())
+);
+</script>
+</body>
+</html>
