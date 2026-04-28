@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v32</div>
+<div id="version">v33</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1068,83 +1068,35 @@ houseWalls.castShadow = true;
 houseWalls.receiveShadow = true;
 scene.add(houseWalls);
 
-// Roof — simple gabled roof with a single east-west ridge over the bounding
-// rectangle of the footprint. Two pitched panels meet at the ridge; two
-// triangular gable walls (cream stucco) close the east and west ends.
-// True multi-hip topology (matching the satellite image) is out of scope
-// for primitive geometry; this reads cleanly as a residential roof.
-const _shapePts = houseShape.getPoints();
-let _hMinX = Infinity, _hMaxX = -Infinity, _hMinSY = Infinity, _hMaxSY = -Infinity;
-_shapePts.forEach(p => {
-  _hMinX = Math.min(_hMinX, p.x); _hMaxX = Math.max(_hMaxX, p.x);
-  _hMinSY = Math.min(_hMinSY, p.y); _hMaxSY = Math.max(_hMaxSY, p.y);
-});
-// Shape-y is -world-z, so:
-const _hMinZ = -_hMaxSY, _hMaxZ = -_hMinSY;
-const _eaveOH = 0.8;
-const _ridgeRise = 5.0;
-const _eaveY = HOUSE_HEIGHT;
-const _ridgeY = HOUSE_HEIGHT + _ridgeRise;
-const _ridgeZ = (_hMinZ + _hMaxZ) / 2;
-const _x0 = _hMinX - _eaveOH, _x1 = _hMaxX + _eaveOH;
-const _zN = _hMinZ - _eaveOH, _zS = _hMaxZ + _eaveOH;
-
-// Two pitched roof panels (north and south of the ridge)
-const _roofPositions = [
-  // 0,1: north eave
-  _x0, _eaveY, _zN,
-  _x1, _eaveY, _zN,
-  // 2,3: ridge line
-  _x0, _ridgeY, _ridgeZ,
-  _x1, _ridgeY, _ridgeZ,
-  // 4,5: south eave
-  _x0, _eaveY, _zS,
-  _x1, _eaveY, _zS
-];
-const _roofIndices = [
-  0, 1, 3,  0, 3, 2, // north panel
-  2, 3, 5,  2, 5, 4  // south panel
-];
-const gabledRoofGeom = new T.BufferGeometry();
-gabledRoofGeom.setAttribute('position', new T.Float32BufferAttribute(_roofPositions, 3));
-gabledRoofGeom.setIndex(_roofIndices);
-gabledRoofGeom.computeVertexNormals();
+// Roof — thick dark slab with a 4% perimeter overhang. A true gabled or
+// hipped roof on this irregular L/U footprint is a real chunk of custom
+// geometry; the thicker-with-overhang slab reads cleanly at the camera
+// distances the planner uses.
+const ROOF_THICKNESS = 1.0;
+const houseRoofGeom = new T.ExtrudeGeometry(houseShape, { depth: ROOF_THICKNESS, bevelEnabled: false });
+houseRoofGeom.rotateX(-Math.PI / 2);
+houseRoofGeom.computeBoundingBox();
+const _roofCtr = new T.Vector3();
+houseRoofGeom.boundingBox.getCenter(_roofCtr);
+houseRoofGeom.translate(-_roofCtr.x, 0, -_roofCtr.z);
+houseRoofGeom.scale(1.04, 1, 1.04);
+houseRoofGeom.translate(_roofCtr.x, 0, _roofCtr.z);
 const houseRoof = new T.Mesh(
-  gabledRoofGeom,
-  new T.MeshLambertMaterial({ color: 0x1a1612, side: T.DoubleSide })
+  houseRoofGeom,
+  new T.MeshLambertMaterial({ color: 0x1a1612 })
 );
+houseRoof.position.y = HOUSE_HEIGHT;
 houseRoof.castShadow = true;
 houseRoof.receiveShadow = true;
 scene.add(houseRoof);
 
-// Triangular gable walls (cream stucco) at each end, filling the space
-// between flat wall top (at HOUSE_HEIGHT) and the ridge.
-const _gableMat = new T.MeshLambertMaterial({ color: 0xf2ebd8, side: T.DoubleSide });
-function buildGableTriangle(x, zN, zS, ridgeZ, eaveY, ridgeY) {
-  const geom = new T.BufferGeometry();
-  geom.setAttribute('position', new T.Float32BufferAttribute([
-    x, eaveY, zN,
-    x, eaveY, zS,
-    x, ridgeY, ridgeZ
-  ], 3));
-  geom.setIndex([0, 1, 2]);
-  geom.computeVertexNormals();
-  return new T.Mesh(geom, _gableMat);
-}
-const wGable = buildGableTriangle(_hMinX, _hMinZ, _hMaxZ, _ridgeZ, _eaveY, _ridgeY);
-const eGable = buildGableTriangle(_hMaxX, _hMinZ, _hMaxZ, _ridgeZ, _eaveY, _ridgeY);
-wGable.castShadow = true; wGable.receiveShadow = true;
-eGable.castShadow = true; eGable.receiveShadow = true;
-scene.add(wGable);
-scene.add(eGable);
-
-// Chimney — tall cream column piercing the south slope
-const _chimneyH = 7;
+// Chimney — tall cream column rising behind the porch alcove on the east side
+const _chimneyH = 6.5;
 const houseChimney = new T.Mesh(
   new T.BoxGeometry(1.5, _chimneyH, 1.5),
   new T.MeshLambertMaterial({ color: 0xeae0c8 })
 );
-houseChimney.position.set(8, HOUSE_HEIGHT + _chimneyH / 2 + 1.5, 30);
+houseChimney.position.set(8, HOUSE_HEIGHT + ROOF_THICKNESS + _chimneyH / 2 - 0.2, 30);
 houseChimney.castShadow = true;
 houseChimney.receiveShadow = true;
 scene.add(houseChimney);
