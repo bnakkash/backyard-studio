@@ -752,7 +752,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v38</div>
+<div id="version">v39</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1039,15 +1039,15 @@ for (let i = 0; i < YARD_UV.length; i++) {
   const dx = x2 - x1, dz = z2 - z1;
   const len = Math.hypot(dx, dz);
   if (!HOUSE_EDGE_STARTS.has(i)) {
-    const rail = new T.Mesh(new T.BoxGeometry(len, 1.7, 0.2), fenceMat);
-    rail.position.set((x1 + x2) / 2, 0.85, (z1 + z2) / 2);
+    const rail = new T.Mesh(new T.BoxGeometry(len, 6, 0.2), fenceMat);
+    rail.position.set((x1 + x2) / 2, 3, (z1 + z2) / 2);
     rail.rotation.y = Math.atan2(-dz, dx);
     rail.castShadow = true; rail.receiveShadow = true;
     fenceGroup.add(rail);
   }
   if (!HOUSE_INTERIOR_VERTS.has(i)) {
-    const post = new T.Mesh(new T.BoxGeometry(0.3, 2, 0.3), fenceMat);
-    post.position.set(x1, 1, z1);
+    const post = new T.Mesh(new T.BoxGeometry(0.3, 6.4, 0.3), fenceMat);
+    post.position.set(x1, 3.2, z1);
     post.castShadow = true;
     fenceGroup.add(post);
   }
