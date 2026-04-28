@@ -351,7 +351,14 @@
     transform: translateX(-50%);
     padding: 7px 8px;
     display: flex; gap: 2px;
+    max-width: calc(100vw - 32px);
+    overflow-x: auto;
+    overflow-y: hidden;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
   }
+  #bottom-bar::-webkit-scrollbar { display: none; }
+  #bottom-bar > * { flex-shrink: 0; }
   .cam-btn {
     background: transparent;
     border: none;
@@ -397,15 +404,21 @@
   }
   #version {
     position: absolute;
-    bottom: 6px; right: 10px;
+    bottom: 8px; right: 10px;
     font-family: 'JetBrains Mono', monospace;
-    font-size: 9px;
+    font-size: 10px;
     letter-spacing: 0.18em;
-    color: var(--text-dimmer);
+    color: var(--accent);
+    background: rgba(28, 33, 24, 0.92);
+    border: 1px solid var(--border);
+    padding: 4px 9px;
+    border-radius: 100px;
     pointer-events: none;
     user-select: none;
     text-transform: uppercase;
-    z-index: 5;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 25;
   }
   kbd {
     background: var(--panel);
@@ -739,7 +752,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v36</div>
+<div id="version">v37</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
