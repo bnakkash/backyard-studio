@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v25</div>
+<div id="version">v26</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -789,6 +789,57 @@ scene.add(sun);
 const hemi = new T.HemisphereLight(0xbfd4e6, 0x6d7f55, 0.4);
 scene.add(hemi);
 
+// Sky dome — vertical gradient sphere wrapping the scene. Replaces the
+// flat background visually; the underlying scene.background color stays
+// as the fog tint (still updated by setSunTime).
+const skyMaterial = new T.ShaderMaterial({
+  uniforms: {
+    topColor:     { value: new T.Color(0x6e9ec9) },
+    horizonColor: { value: new T.Color(0xd8dfd0) },
+    groundColor:  { value: new T.Color(0xa89880) },
+    exponent:     { value: 0.55 }
+  },
+  vertexShader: `
+    varying vec3 vWorld;
+    void main() {
+      vec4 wp = modelMatrix * vec4(position, 1.0);
+      vWorld = wp.xyz;
+      gl_Position = projectionMatrix * viewMatrix * wp;
+    }
+  `,
+  fragmentShader: `
+    uniform vec3 topColor;
+    uniform vec3 horizonColor;
+    uniform vec3 groundColor;
+    uniform float exponent;
+    varying vec3 vWorld;
+    void main() {
+      float h = normalize(vWorld).y;
+      vec3 c;
+      if (h >= 0.0) c = mix(horizonColor, topColor, pow(h, exponent));
+      else          c = mix(horizonColor, groundColor, pow(-h, exponent * 1.4));
+      gl_FragColor = vec4(c, 1.0);
+    }
+  `,
+  side: T.BackSide,
+  depthWrite: false,
+  fog: false
+});
+const skyDome = new T.Mesh(new T.SphereGeometry(420, 32, 16), skyMaterial);
+scene.add(skyDome);
+
+// Visible sun disc with a soft glow halo. Follows the directional light.
+const sunDisc = new T.Mesh(
+  new T.SphereGeometry(2.2, 16, 12),
+  new T.MeshBasicMaterial({ color: 0xfff6dc, fog: false })
+);
+const sunHalo = new T.Mesh(
+  new T.SphereGeometry(4.6, 16, 12),
+  new T.MeshBasicMaterial({ color: 0xffd07a, transparent: true, opacity: 0.35, fog: false, depthWrite: false })
+);
+scene.add(sunDisc);
+scene.add(sunHalo);
+
 // ============================================================
 // Sun position by time-of-day. Simplified solar arc for Jacksonville
 // (lat ~30° N): rises east, peaks in the south, sets west; max altitude
@@ -824,6 +875,19 @@ function setSunTime(hour) {
   sun.color.copy(_sunLightTmp);
   sun.intensity = 0.55 + altFrac * 0.7;       // 0.55 .. 1.25
   hemi.intensity = 0.25 + altFrac * 0.35;     // 0.25 .. 0.6
+  // Sky dome top color: warmer/lower-saturation at horizon hours, blue at noon.
+  // Horizon color tracks the existing fog/sky color so the dome blends with fog.
+  skyMaterial.uniforms.topColor.value.copy(_sunSkyNoon)
+    .lerp(new T.Color(0x6e9ec9), altFrac * 0.85)
+    .lerp(_sunSkyDawn, (1 - altFrac) * 0.6);
+  skyMaterial.uniforms.horizonColor.value.copy(_sunSkyTmp);
+  // Sun disc + halo: place at the same direction as the directional light,
+  // a bit closer than the dome so it draws over it.
+  sunDisc.position.copy(sun.position).normalize().multiplyScalar(380);
+  sunHalo.position.copy(sunDisc.position);
+  // Halo redder at low altitudes
+  sunHalo.material.color.setHex(altFrac > 0.5 ? 0xffd07a : 0xff8a55);
+  sunHalo.material.opacity = 0.25 + (1 - altFrac) * 0.45;
   // UI
   const sunTimeEl = document.getElementById('sun-time');
   if (sunTimeEl) sunTimeEl.textContent = formatHour(h);
