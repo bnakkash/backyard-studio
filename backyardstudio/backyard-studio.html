@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v29</div>
+<div id="version">v30</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1005,7 +1005,14 @@ yard.position.set(0, 0, 0);
 yard.receiveShadow = true;
 scene.add(yard);
 
-// Build the fence outline as a raised rim along the polygon edges
+// Build the fence outline as a raised rim along the polygon edges,
+// SKIPPING the segments where the back of the house meets the yard.
+// Polygon vertices 9..16 + 0 form the house back wall (with porch alcove);
+// edges starting at 9..16 are inside the house, no fence there. Posts at
+// the interior house vertices (10..16) are also skipped — corners 9 and 0
+// keep their posts since the fence terminates against the house there.
+const HOUSE_EDGE_STARTS    = new Set([9, 10, 11, 12, 13, 14, 15, 16]);
+const HOUSE_INTERIOR_VERTS = new Set([10, 11, 12, 13, 14, 15, 16]);
 const fenceGroup = new T.Group();
 const fenceMat = new T.MeshLambertMaterial({ color: 0xe8e1cc });
 for (let i = 0; i < YARD_UV.length; i++) {
@@ -1015,22 +1022,64 @@ for (let i = 0; i < YARD_UV.length; i++) {
   const [x2, z2] = uvToWorld(u2, v2);
   const dx = x2 - x1, dz = z2 - z1;
   const len = Math.hypot(dx, dz);
-  // Fence rail
-  const rail = new T.Mesh(
-    new T.BoxGeometry(len, 1.7, 0.2),
-    fenceMat
-  );
-  rail.position.set((x1 + x2) / 2, 0.85, (z1 + z2) / 2);
-  rail.rotation.y = Math.atan2(-dz, dx);
-  rail.castShadow = true; rail.receiveShadow = true;
-  fenceGroup.add(rail);
-  // Post at each vertex
-  const post = new T.Mesh(new T.BoxGeometry(0.3, 2, 0.3), fenceMat);
-  post.position.set(x1, 1, z1);
-  post.castShadow = true;
-  fenceGroup.add(post);
+  if (!HOUSE_EDGE_STARTS.has(i)) {
+    const rail = new T.Mesh(new T.BoxGeometry(len, 1.7, 0.2), fenceMat);
+    rail.position.set((x1 + x2) / 2, 0.85, (z1 + z2) / 2);
+    rail.rotation.y = Math.atan2(-dz, dx);
+    rail.castShadow = true; rail.receiveShadow = true;
+    fenceGroup.add(rail);
+  }
+  if (!HOUSE_INTERIOR_VERTS.has(i)) {
+    const post = new T.Mesh(new T.BoxGeometry(0.3, 2, 0.3), fenceMat);
+    post.position.set(x1, 1, z1);
+    post.castShadow = true;
+    fenceGroup.add(post);
+  }
 }
 scene.add(fenceGroup);
+
+// Backdrop house — built into the south perimeter. The back wall traces
+// polygon vertices 9 → 10 → 11 → ... → 16 → 0 (matching the yard alcove
+// exactly), then extends south by HOUSE_DEPTH ft so the building has volume.
+const HOUSE_BACK_VERTS = [9, 10, 11, 12, 13, 14, 15, 16, 0];
+const HOUSE_DEPTH  = 32;
+const HOUSE_HEIGHT = 11;
+
+const houseShape = new T.Shape();
+const _backPts = HOUSE_BACK_VERTS.map(i => uvToWorld(YARD_UV[i][0], YARD_UV[i][1]));
+// Shape-Y maps to world -Z after rotateX(-PI/2), so negate Z when building.
+houseShape.moveTo(_backPts[0][0], -_backPts[0][1]);
+for (let i = 1; i < _backPts.length; i++) {
+  houseShape.lineTo(_backPts[i][0], -_backPts[i][1]);
+}
+const _frontZ = Math.max(..._backPts.map(p => p[1])) + HOUSE_DEPTH;
+houseShape.lineTo(_backPts[_backPts.length - 1][0], -_frontZ);
+houseShape.lineTo(_backPts[0][0], -_frontZ);
+houseShape.closePath();
+
+// Walls — extrude shape and stand it up
+const houseWallGeom = new T.ExtrudeGeometry(houseShape, { depth: HOUSE_HEIGHT, bevelEnabled: false });
+houseWallGeom.rotateX(-Math.PI / 2);
+const houseWalls = new T.Mesh(
+  houseWallGeom,
+  new T.MeshLambertMaterial({ color: 0xe8d8b8 })
+);
+houseWalls.castShadow = true;
+houseWalls.receiveShadow = true;
+scene.add(houseWalls);
+
+// Roof — slim slab on top with a small dark trim, flat to keep things
+// readable on the irregular L-shaped footprint
+const houseRoofGeom = new T.ExtrudeGeometry(houseShape, { depth: 0.45, bevelEnabled: false });
+houseRoofGeom.rotateX(-Math.PI / 2);
+const houseRoof = new T.Mesh(
+  houseRoofGeom,
+  new T.MeshLambertMaterial({ color: 0x3a3530 })
+);
+houseRoof.position.y = HOUSE_HEIGHT;
+houseRoof.castShadow = true;
+houseRoof.receiveShadow = true;
+scene.add(houseRoof);
 
 // Subtle outer grass ring so the polygon doesn't float over a void
 const outerGrass = new T.Mesh(
