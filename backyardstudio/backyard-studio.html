@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v33</div>
+<div id="version">v34</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1043,7 +1043,7 @@ scene.add(fenceGroup);
 // exactly), then extends south by HOUSE_DEPTH ft so the building has volume.
 const HOUSE_BACK_VERTS = [9, 10, 11, 12, 13, 14, 15, 16, 0];
 const HOUSE_DEPTH  = 32;
-const HOUSE_HEIGHT = 11;
+const HOUSE_HEIGHT = 8.5;
 
 const houseShape = new T.Shape();
 const _backPts = HOUSE_BACK_VERTS.map(i => uvToWorld(YARD_UV[i][0], YARD_UV[i][1]));
