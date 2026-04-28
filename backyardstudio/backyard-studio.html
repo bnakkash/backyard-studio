@@ -736,7 +736,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v30</div>
+<div id="version">v31</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1057,29 +1057,87 @@ houseShape.lineTo(_backPts[_backPts.length - 1][0], -_frontZ);
 houseShape.lineTo(_backPts[0][0], -_frontZ);
 houseShape.closePath();
 
-// Walls — extrude shape and stand it up
+// Walls — cream stucco
 const houseWallGeom = new T.ExtrudeGeometry(houseShape, { depth: HOUSE_HEIGHT, bevelEnabled: false });
 houseWallGeom.rotateX(-Math.PI / 2);
 const houseWalls = new T.Mesh(
   houseWallGeom,
-  new T.MeshLambertMaterial({ color: 0xe8d8b8 })
+  new T.MeshLambertMaterial({ color: 0xf2ebd8 })
 );
 houseWalls.castShadow = true;
 houseWalls.receiveShadow = true;
 scene.add(houseWalls);
 
-// Roof — slim slab on top with a small dark trim, flat to keep things
-// readable on the irregular L-shaped footprint
-const houseRoofGeom = new T.ExtrudeGeometry(houseShape, { depth: 0.45, bevelEnabled: false });
+// Roof — thick dark slab with a 4% perimeter overhang (faking the eave
+// shadow you'd get from a real hip roof). Flat for now; a real hip roof
+// on this L/U footprint is a lot of custom geometry.
+const ROOF_THICKNESS = 1.0;
+const houseRoofGeom = new T.ExtrudeGeometry(houseShape, { depth: ROOF_THICKNESS, bevelEnabled: false });
 houseRoofGeom.rotateX(-Math.PI / 2);
+houseRoofGeom.computeBoundingBox();
+const _roofCtr = new T.Vector3();
+houseRoofGeom.boundingBox.getCenter(_roofCtr);
+houseRoofGeom.translate(-_roofCtr.x, 0, -_roofCtr.z);
+houseRoofGeom.scale(1.04, 1, 1.04);
+houseRoofGeom.translate(_roofCtr.x, 0, _roofCtr.z);
 const houseRoof = new T.Mesh(
   houseRoofGeom,
-  new T.MeshLambertMaterial({ color: 0x3a3530 })
+  new T.MeshLambertMaterial({ color: 0x1a1612 })
 );
 houseRoof.position.y = HOUSE_HEIGHT;
 houseRoof.castShadow = true;
 houseRoof.receiveShadow = true;
 scene.add(houseRoof);
+
+// Chimney — tall cream column rising behind the porch alcove on the east side
+const _chimneyH = 6.5;
+const houseChimney = new T.Mesh(
+  new T.BoxGeometry(1.5, _chimneyH, 1.5),
+  new T.MeshLambertMaterial({ color: 0xeae0c8 })
+);
+houseChimney.position.set(8, HOUSE_HEIGHT + ROOF_THICKNESS + _chimneyH / 2 - 0.2, 30);
+houseChimney.castShadow = true;
+houseChimney.receiveShadow = true;
+scene.add(houseChimney);
+
+// Back-wall windows — one per wing, sliding-glass-door style with three
+// vertical panes. Built at the local origin (window center) so rotation
+// works cleanly around its own axis.
+function buildHouseWindow(w, h, frameColor, glassColor) {
+  const grp = new T.Group();
+  const glass = new T.Mesh(
+    new T.BoxGeometry(w, h, 0.1),
+    new T.MeshLambertMaterial({ color: glassColor, emissive: 0x1a2030 })
+  );
+  grp.add(glass);
+  const frame = new T.Mesh(
+    new T.BoxGeometry(w + 0.3, h + 0.3, 0.06),
+    new T.MeshLambertMaterial({ color: frameColor })
+  );
+  frame.position.z = -0.02;
+  grp.add(frame);
+  for (const off of [-w / 6, w / 6]) {
+    const m = new T.Mesh(
+      new T.BoxGeometry(0.08, h - 0.1, 0.08),
+      new T.MeshLambertMaterial({ color: frameColor })
+    );
+    m.position.set(off, 0, 0.07);
+    grp.add(m);
+  }
+  return grp;
+}
+// Place one window on each porch-facing wing wall. The alcove walls live
+// between vertices 11–12 (x≈5, z=19→24, faces -X) and 14–15 (x≈-4, z=19→24,
+// faces +X). Centered ~halfway up the wall, ~1.5 ft sill above grade.
+const _winY = 0.5 + 1.8 + 4.5 / 2;
+const winE = buildHouseWindow(4.5, 4.5, 0xf5ede0, 0x4a6480);
+winE.position.set(5.05, _winY, 21.5);
+winE.rotation.y = -Math.PI / 2; // glass face toward -X (into porch)
+scene.add(winE);
+const winW = buildHouseWindow(4.5, 4.5, 0xf5ede0, 0x4a6480);
+winW.position.set(-4.05, _winY, 21.5);
+winW.rotation.y = Math.PI / 2;  // glass face toward +X (into porch)
+scene.add(winW);
 
 // Subtle outer grass ring so the polygon doesn't float over a void
 const outerGrass = new T.Mesh(
