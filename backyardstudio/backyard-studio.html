@@ -686,6 +686,7 @@
   <span class="sun-icon">☀</span>
   <span class="sun-time" id="sun-time">12:00 PM</span>
   <input type="range" id="sun-slider" class="sun-slider" min="6" max="20" step="0.1" value="12">
+  <button class="sun-now" id="sun-play" type="button" aria-label="Play day cycle" title="Play day cycle">▶</button>
   <button class="sun-now" id="sun-now" type="button">Now</button>
 </div>
 
@@ -752,7 +753,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v41</div>
+<div id="version">v42</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3191,6 +3192,42 @@ animate();
     try { localStorage.setItem('backyard_sun_hour', String(h)); } catch (_) {}
     toast('Sun · current time');
   });
+
+  // Day-cycle playback. ▶ animates the sun from 6 AM → 8 PM over ~15 s,
+  // looping until pressed again. Same setSunTime drives every frame, so
+  // sky / shadows / halo update for free.
+  const playBtn = document.getElementById('sun-play');
+  let playRAF = null, playStartT = 0, playStartHour = 6;
+  const PLAY_SECONDS = 15;
+  function stopPlay() {
+    if (playRAF !== null) { cancelAnimationFrame(playRAF); playRAF = null; }
+    playBtn.textContent = '▶';
+    playBtn.setAttribute('aria-label', 'Play day cycle');
+  }
+  function startPlay() {
+    playStartT = performance.now();
+    playStartHour = Math.max(6, Math.min(20, parseFloat(slider.value)));
+    playBtn.textContent = '⏸';
+    playBtn.setAttribute('aria-label', 'Pause day cycle');
+    const step = () => {
+      const elapsed = (performance.now() - playStartT) / 1000;
+      const span = 20 - 6;
+      // Loop: sweep 6→20 in PLAY_SECONDS, then wrap. Start from current
+      // slider position so play picks up where you scrubbed.
+      const offset = (elapsed / PLAY_SECONDS) * span;
+      const h = 6 + ((playStartHour - 6 + offset) % span);
+      slider.value = h;
+      setSunTime(h);
+      playRAF = requestAnimationFrame(step);
+    };
+    playRAF = requestAnimationFrame(step);
+  }
+  playBtn.addEventListener('click', () => {
+    if (playRAF !== null) stopPlay();
+    else startPlay();
+  });
+  // Stop playback when the user grabs the slider — manual scrub takes over
+  slider.addEventListener('pointerdown', stopPlay);
 })();
 
 // First-run welcome — covers the most common gestures up front so the
