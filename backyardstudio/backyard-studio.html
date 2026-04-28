@@ -415,6 +415,31 @@
     letter-spacing: 0.03em;
     line-height: 1.9;
   }
+  #scale-bar {
+    position: absolute;
+    bottom: 8px; left: 12px;
+    pointer-events: none;
+    user-select: none;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9.5px;
+    color: var(--text);
+    letter-spacing: 0.1em;
+    display: flex; flex-direction: column; align-items: flex-start;
+    gap: 2px;
+    background: rgba(28, 33, 24, 0.7);
+    border: 1px solid var(--border);
+    padding: 4px 8px;
+    border-radius: 100px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 8;
+  }
+  #scale-bar .scale-line {
+    height: 2px;
+    background: var(--text);
+    width: 80px; /* set in JS */
+    box-shadow: -1px 0 0 var(--text), 1px 0 0 var(--text);
+  }
   #version {
     position: absolute;
     bottom: 8px; right: 10px;
@@ -772,7 +797,11 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v43</div>
+<div id="scale-bar">
+  <span id="scale-bar-label">10 ft</span>
+  <div class="scale-line" id="scale-bar-line"></div>
+</div>
+<div id="version">v44</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3222,9 +3251,33 @@ compassEl.addEventListener('touchend', (e) => {
 // ============================================================
 // Render loop
 // ============================================================
+// Scale bar (gives the user a sense of how big things are at any zoom).
+// Picks a "nice" round foot value that produces a 60–130 px on-screen bar.
+const _scaleBarLine = document.getElementById('scale-bar-line');
+const _scaleBarLabel = document.getElementById('scale-bar-label');
+const _scaleBarSteps = [1, 2, 5, 10, 20, 50, 100, 200];
+let _lastScaleFt = -1;
+function updateScaleBar() {
+  const fov = camera.fov * Math.PI / 180;
+  const pxPerFt = window.innerHeight / (2 * cam.radius * Math.tan(fov / 2));
+  let chosen = _scaleBarSteps[0], chosenPx = chosen * pxPerFt;
+  for (const ft of _scaleBarSteps) {
+    const px = ft * pxPerFt;
+    if (px >= 60 && px <= 130) { chosen = ft; chosenPx = px; break; }
+    if (px > 130) break;
+    chosen = ft; chosenPx = px;
+  }
+  if (chosen !== _lastScaleFt) {
+    _scaleBarLabel.textContent = chosen + ' ft';
+    _lastScaleFt = chosen;
+  }
+  _scaleBarLine.style.width = Math.round(chosenPx) + 'px';
+}
+
 function animate() {
   requestAnimationFrame(animate);
   updateCompass();
+  updateScaleBar();
   // Pulse the selection outline so it's easy to spot at any zoom level.
   if (selection && selection.outline) {
     const t = performance.now() * 0.003;
