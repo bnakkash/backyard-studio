@@ -739,7 +739,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v35</div>
+<div id="version">v36</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2746,6 +2746,7 @@ function startInertia() {
 // nothing happens — the camera doesn't budge for tiny accidental motions.
 // To switch, lift both fingers and start a new gesture.
 let twoFingerMode = null; // null | 'pinch' | 'tilt' | 'twist'
+let _twistPivot = null;   // world point under the pinch center on commit
 let cumTilt = 0;          // accumulated |dy| (px)
 let cumTwist = 0;         // accumulated |dAngle| (rad)
 let cumPinch = 0;         // accumulated |Δ finger distance| (px)
@@ -2761,6 +2762,7 @@ canvas.addEventListener('touchstart', e => {
   cumTilt = 0;
   cumTwist = 0;
   cumPinch = 0;
+  _twistPivot = null;
   if (e.touches.length === 1) {
     const t = e.touches[0];
     lastMouse = { x: t.clientX, y: t.clientY };
@@ -2875,12 +2877,26 @@ canvas.addEventListener('touchmove', e => {
       const dPhi = -dy * 0.006;
       cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi + dPhi));
     }
-    // Twist → rotate selection (or camera if nothing selected)
+    // Twist → rotate selection (or camera if nothing selected). Camera twist
+    // pivots around the world point under the pinch center (Apple Maps style)
+    // at 1:1 — fingers rotate 90°, camera rotates 90°. The 0.6 damping was
+    // making it feel laggy and pivoting around `target` made the world drift
+    // out from under the fingers, both major sources of "doesn't feel right."
     if (twoFingerMode === 'twist' && lastTouchAngle !== null) {
       if (onSelected) {
         applyRotationToSelection(selection.mesh.rotation.y - dAngle);
       } else {
-        cam.theta -= dAngle * 0.6;
+        if (!_twistPivot) {
+          _twistPivot = groundPick({ clientX: center.x, clientY: center.y })
+                     || target.clone();
+        }
+        const alpha = -dAngle;
+        const dx0 = target.x - _twistPivot.x;
+        const dz0 = target.z - _twistPivot.z;
+        const ca = Math.cos(alpha), sa = Math.sin(alpha);
+        target.x = _twistPivot.x + dx0 * ca - dz0 * sa;
+        target.z = _twistPivot.z + dx0 * sa + dz0 * ca;
+        cam.theta += alpha;
       }
     }
     lastTouchDist = d;
