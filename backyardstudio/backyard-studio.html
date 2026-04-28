@@ -752,7 +752,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v39</div>
+<div id="version">v40</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2763,12 +2763,11 @@ let _twistPivot = null;   // world point under the pinch center on commit
 let cumTilt = 0;          // accumulated |dy| (px)
 let cumTwist = 0;         // accumulated |dAngle| (rad)
 let cumPinch = 0;         // accumulated |Δ finger distance| (px)
-const TILT_LOCK_PX = 9;
-const TWIST_LOCK_RAD = 0.12; // ~6.9°. Pinch + tilt naturally drift in
-                             // angle a few degrees; require a deliberate
-                             // rotation before committing to twist.
-const PINCH_LOCK_PX = 9;
-const LOCK_DOMINANCE = 1.35; // winner must be this much over the runner-up
+// Single threshold: the winning axis must accumulate this many pixels
+// of finger motion (vertical drift for tilt, finger-distance change for
+// pinch, arc length for twist) before it commits.
+const COMMIT_PX = 12;
+const LOCK_DOMINANCE = 1.3; // winner must be this much over the runner-up
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
@@ -2858,22 +2857,22 @@ canvas.addEventListener('touchmove', e => {
       else if (dAngle < -Math.PI) dAngle += 2 * Math.PI;
     }
 
-    // Gearbox: accumulate motion in each axis. The first to pass its
-    // threshold wins and locks for the rest of the gesture; the others
-    // stay quiet until both fingers lift.
-    cumTilt += Math.abs(dy);
-    cumTwist += Math.abs(dAngle);
+    // Gearbox: accumulate motion in each axis IN PIXELS so the three are
+    // physically comparable. Twist is converted to arc-length each finger
+    // travels around the pinch center: arc = |dAngle| * (d/2).
+    // Without this, comparing radians vs pixels meant tilt almost always
+    // crossed its threshold first even during a deliberate twist.
+    const dArc = Math.abs(dAngle) * (d * 0.5);
+    cumTilt  += Math.abs(dy);
     cumPinch += Math.abs(dPinch);
+    cumTwist += dArc;
     if (twoFingerMode === null) {
       const scores = [
-        { name: 'tilt',  s: cumTilt  / TILT_LOCK_PX },
-        { name: 'twist', s: cumTwist / TWIST_LOCK_RAD },
-        { name: 'pinch', s: cumPinch / PINCH_LOCK_PX }
+        { name: 'tilt',  s: cumTilt  },
+        { name: 'twist', s: cumTwist },
+        { name: 'pinch', s: cumPinch }
       ].sort((a, b) => b.s - a.s);
-      // Require the leader to (a) cross 1.0 AND (b) clearly lead the
-      // runner-up. Otherwise keep waiting — better to do nothing for a
-      // few more frames than commit to the wrong gesture.
-      if (scores[0].s > 1 && scores[0].s > scores[1].s * LOCK_DOMINANCE) {
+      if (scores[0].s > COMMIT_PX && scores[0].s > scores[1].s * LOCK_DOMINANCE) {
         twoFingerMode = scores[0].name;
       }
     }
