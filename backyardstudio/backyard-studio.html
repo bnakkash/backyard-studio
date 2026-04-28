@@ -8,6 +8,19 @@
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#12150e">
 <title>Backyard Studio</title>
+<meta name="description" content="3D backyard landscape planner. Drop trees, beds, hardscape and watch shadows sweep through the day.">
+<!-- Open Graph / Twitter card so shared links show a preview -->
+<meta property="og:type" content="website">
+<meta property="og:title" content="Backyard Studio">
+<meta property="og:description" content="3D backyard landscape planner. Drop trees, beds, hardscape and watch shadows sweep through the day.">
+<meta property="og:image" content="og-image.svg">
+<meta property="og:image:type" content="image/svg+xml">
+<meta property="og:image:width" content="1200">
+<meta property="og:image:height" content="630">
+<meta name="twitter:card" content="summary_large_image">
+<meta name="twitter:title" content="Backyard Studio">
+<meta name="twitter:description" content="3D backyard landscape planner.">
+<meta name="twitter:image" content="og-image.svg">
 <link rel="manifest" href="manifest.webmanifest">
 <link rel="icon" href="icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="icon.svg">
@@ -732,7 +745,13 @@
     <div class="btn-row">
       <button class="btn" id="clear-btn">Clear</button>
       <button class="btn" id="share-btn">Share</button>
-      <button class="btn" id="export-btn">Export</button>
+    </div>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn" id="export-btn">View PNG</button>
+      <button class="btn" id="plan-btn">Plan PNG</button>
+    </div>
+    <div class="btn-row" style="margin-top:6px">
+      <button class="btn" id="house-toggle">Hide House</button>
     </div>
     <div class="save-status" id="save-status">Auto-save</div>
   </div>
@@ -753,7 +772,7 @@
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v42</div>
+<div id="version">v43</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2232,14 +2251,52 @@ function duplicateSelected() {
 // ============================================================
 function exportPNG() {
   renderer.render(scene, camera);
-  const url = canvas.toDataURL('image/png');
+  triggerDownload(canvas.toDataURL('image/png'),
+    `backyard-${new Date().toISOString().slice(0, 10)}.png`);
+  toast('Exported PNG');
+}
+
+// Plan-view export: top-down camera + high-resolution render. Useful for
+// printing or sending the layout to a landscaper / contractor.
+function exportPlanPNG() {
+  // Snapshot camera + viewport
+  const savedTheta = cam.theta, savedPhi = cam.phi, savedRadius = cam.radius;
+  const savedTarget = target.clone();
+  const savedW = window.innerWidth, savedH = window.innerHeight;
+  const savedRatio = renderer.getPixelRatio();
+  // Switch to top-down at a height that fits the yard
+  cam.theta = Math.PI * 0.5;
+  cam.phi = 0.05;
+  cam.radius = 110;
+  target.set(0, 0, 8);
+  // Render at 2048×2048 regardless of viewport
+  const SIZE = 2048;
+  renderer.setPixelRatio(1);
+  renderer.setSize(SIZE, SIZE, false);
+  camera.aspect = 1;
+  camera.updateProjectionMatrix();
+  updateCam();
+  renderer.render(scene, camera);
+  triggerDownload(canvas.toDataURL('image/png'),
+    `backyard-plan-${new Date().toISOString().slice(0, 10)}.png`);
+  // Restore
+  renderer.setPixelRatio(savedRatio);
+  renderer.setSize(savedW, savedH, false);
+  camera.aspect = savedW / savedH;
+  camera.updateProjectionMatrix();
+  cam.theta = savedTheta; cam.phi = savedPhi; cam.radius = savedRadius;
+  target.copy(savedTarget);
+  updateCam();
+  toast('Plan PNG · 2048×2048');
+}
+
+function triggerDownload(url, filename) {
   const a = document.createElement('a');
   a.href = url;
-  a.download = `backyard-${new Date().toISOString().slice(0, 10)}.png`;
+  a.download = filename;
   document.body.appendChild(a);
   a.click();
   a.remove();
-  toast('Exported PNG');
 }
 
 // ============================================================
@@ -2422,6 +2479,18 @@ const layoutStore = {
 };
 
 document.getElementById('export-btn').addEventListener('click', exportPNG);
+document.getElementById('plan-btn').addEventListener('click', exportPlanPNG);
+
+// Show / hide the backdrop house — handy when you want to focus on the
+// yard layout without the house silhouette dominating the top-down view.
+const _houseParts = [houseWalls, houseRoof, houseChimney, winE, winW].filter(Boolean);
+const houseToggleBtn = document.getElementById('house-toggle');
+let _houseVisible = true;
+houseToggleBtn.addEventListener('click', () => {
+  _houseVisible = !_houseVisible;
+  _houseParts.forEach(p => { p.visible = _houseVisible; });
+  houseToggleBtn.textContent = _houseVisible ? 'Hide House' : 'Show House';
+});
 document.getElementById('share-btn').addEventListener('click', shareLayout);
 
 // Initialize snap-btn from persisted state, then bind toggle
