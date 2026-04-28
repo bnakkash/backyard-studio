@@ -733,10 +733,13 @@
   <button class="cam-btn" data-view="front">Yard view</button>
   <button class="cam-btn" id="reset-cam">Reset</button>
   <span class="cam-divider"></span>
+  <button class="cam-btn icon-btn" id="rot-left" aria-label="Rotate camera 90° left" title="Rotate 90° left">↺</button>
+  <button class="cam-btn icon-btn" id="rot-right" aria-label="Rotate camera 90° right" title="Rotate 90° right">↻</button>
+  <span class="cam-divider"></span>
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
 </div>
 
-<div id="version">v34</div>
+<div id="version">v35</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2425,6 +2428,29 @@ undoBtn.addEventListener('click', undo);
 redoBtn.addEventListener('click', redo);
 updateUndoRedoButtons();
 
+// Camera 90° pivots — animated via rAF over ~350ms with ease-out cubic.
+// One in-flight rotation at a time so rapid taps queue cleanly.
+let _rotRAF = null;
+function rotateCameraBy(deltaTheta) {
+  if (_rotRAF !== null) cancelAnimationFrame(_rotRAF);
+  const start = cam.theta;
+  const end = start + deltaTheta;
+  const t0 = performance.now();
+  const dur = 350;
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    cam.theta = start + (end - start) * e;
+    updateCam();
+    if (k < 1) _rotRAF = requestAnimationFrame(step);
+    else _rotRAF = null;
+  };
+  _rotRAF = requestAnimationFrame(step);
+  haptic(8);
+}
+document.getElementById('rot-left').addEventListener('click', () => rotateCameraBy(-Math.PI / 2));
+document.getElementById('rot-right').addEventListener('click', () => rotateCameraBy(Math.PI / 2));
+
 document.getElementById('panel-close').addEventListener('click', () => {
   selectItem(null);
   clearPaletteSelection();
@@ -2568,17 +2594,27 @@ window.addEventListener('mouseup', e => {
   const dur = performance.now() - (dragStart ? dragStart.t : 0);
   if (!didDrag) {
     if (mouseState === 'left') {
-      // Place only on a brisk tap. Press-and-hold without moving most likely
-      // means the user intended to drag the camera and released early —
-      // dropping an item there is the worst possible default.
-      if (selectedKind && dur < 300) {
-        const pt = groundPick(e);
-        if (pt) placeItem(selectedKind, pt.x, pt.z);
-      } else if (!selectedKind) {
-        // Tap-release selects the hit item (or deselects on miss). Works for
-        // both tapping a fresh item and re-tapping the already-selected one.
-        const hit = pickPlaced(e);
-        selectItem(hit || null);
+      const now = performance.now();
+      const isDoubleTap = !selectedKind && dur < 300
+        && (now - _lastTapTime < 320)
+        && Math.hypot(e.clientX - _lastTapX, e.clientY - _lastTapY) < 32;
+      if (isDoubleTap) {
+        doubleTapZoom(e);
+        _lastTapTime = 0;
+      } else {
+        if (dur < 300) { _lastTapTime = now; _lastTapX = e.clientX; _lastTapY = e.clientY; }
+        // Place only on a brisk tap. Press-and-hold without moving most likely
+        // means the user intended to drag the camera and released early —
+        // dropping an item there is the worst possible default.
+        if (selectedKind && dur < 300) {
+          const pt = groundPick(e);
+          if (pt) placeItem(selectedKind, pt.x, pt.z);
+        } else if (!selectedKind) {
+          // Tap-release selects the hit item (or deselects on miss). Works for
+          // both tapping a fresh item and re-tapping the already-selected one.
+          const hit = pickPlaced(e);
+          selectItem(hit || null);
+        }
       }
     }
   } else if (mouseState === 'left' && dragItem) {
@@ -2647,6 +2683,33 @@ let lastTouchAngle = null;
 );
 
 // Pan helper + flick-to-coast inertia (Apple Maps-style).
+// Double-tap state and zoom helper (Apple Maps style)
+let _lastTapTime = 0, _lastTapX = 0, _lastTapY = 0;
+let _zoomRAF = null;
+function doubleTapZoom(t) {
+  // Zoom toward the world point under the tap. Pulls target halfway to that
+  // point and shrinks orbit radius to ~60%. Animated for ~280ms.
+  const pt = groundPick(t);
+  const startTarget = target.clone();
+  const endTarget = pt ? startTarget.clone().lerp(pt, 0.55) : startTarget;
+  const startRadius = cam.radius;
+  const endRadius = Math.max(8, startRadius * 0.6);
+  const t0 = performance.now();
+  const dur = 280;
+  if (_zoomRAF !== null) cancelAnimationFrame(_zoomRAF);
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    target.lerpVectors(startTarget, endTarget, e);
+    cam.radius = startRadius + (endRadius - startRadius) * e;
+    updateCam();
+    if (k < 1) _zoomRAF = requestAnimationFrame(step);
+    else _zoomRAF = null;
+  };
+  _zoomRAF = requestAnimationFrame(step);
+  haptic(8);
+}
+
 function applyPan(dx, dy) {
   const speed = cam.radius * 0.0018;
   const forward = new T.Vector3();
@@ -2832,17 +2895,30 @@ canvas.addEventListener('touchend', e => {
   if (touchState === 'one' && !didDrag && e.touches.length === 0 && e.changedTouches.length === 1) {
     const t = e.changedTouches[0];
     const dur = performance.now() - (dragStart ? dragStart.t : 0);
-    // A press-and-release without movement most likely meant "I was about to
-    // drag the camera." Only register a true brisk tap as a placement.
-    if (selectedKind && dur < 300) {
-      const pt = groundPick(t);
-      if (pt) placeItem(selectedKind, pt.x, pt.z);
-    } else if (!selectedKind && dur < 300) {
-      // Brisk tap with no drag → re-pick at release and select / deselect.
-      // (Can't trust the touchstart candidate: with the new model, dragItem
-      // only gets set when you tap the already-selected item.)
-      const hit = pickPlaced(t);
-      selectItem(hit || null);
+    // Double-tap to zoom in (Apple Maps style). Recognised before any
+    // place/select handling, since a quick second tap on the same spot
+    // means "look closer" rather than "select again."
+    const now = performance.now();
+    const isDoubleTap = !selectedKind && dur < 300
+      && (now - _lastTapTime < 320)
+      && Math.hypot(t.clientX - _lastTapX, t.clientY - _lastTapY) < 32;
+    if (isDoubleTap) {
+      doubleTapZoom(t);
+      _lastTapTime = 0; // consume so a triple-tap doesn't fire another zoom
+    } else {
+      if (dur < 300) { _lastTapTime = now; _lastTapX = t.clientX; _lastTapY = t.clientY; }
+      // A press-and-release without movement most likely meant "I was about to
+      // drag the camera." Only register a true brisk tap as a placement.
+      if (selectedKind && dur < 300) {
+        const pt = groundPick(t);
+        if (pt) placeItem(selectedKind, pt.x, pt.z);
+      } else if (!selectedKind && dur < 300) {
+        // Brisk tap with no drag → re-pick at release and select / deselect.
+        // (Can't trust the touchstart candidate: with the new model, dragItem
+        // only gets set when you tap the already-selected item.)
+        const hit = pickPlaced(t);
+        selectItem(hit || null);
+      }
     }
   } else if (touchState === 'one' && didDrag && dragItem && e.touches.length === 0) {
     // Item was dragged to a new position via touch — record it
