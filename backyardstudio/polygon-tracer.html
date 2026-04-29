@@ -260,11 +260,12 @@
 
 <div id="output-panel">
   <h2>Your polygon coords</h2>
-  <p class="hint">Copy this and send it back in the chat. These are UV coordinates (0..1) mapped to your photo — I'll bake them into the Backyard Studio.</p>
+  <p class="hint">UV coordinates (0..1) mapped to your photo. The planner reads these as the new yard boundary.</p>
   <textarea id="output-text" readonly></textarea>
   <div class="actions">
     <button class="tool-btn" id="close-output">Back</button>
-    <button class="tool-btn primary" id="copy-btn">Copy to clipboard</button>
+    <button class="tool-btn" id="copy-btn">Copy JSON</button>
+    <button class="tool-btn primary" id="use-btn">Use in Planner →</button>
   </div>
 </div>
 
@@ -732,6 +733,20 @@ document.getElementById('copy-btn').addEventListener('click', () => {
   document.execCommand('copy');
   if (navigator.clipboard) navigator.clipboard.writeText(outputText.value).catch(() => {});
   toast('Copied');
+});
+
+// One-click handoff: write yardVertices directly into localStorage in the
+// shape the planner expects, then jump to the planner. The planner reads
+// 'backyard_yard_uv' on init and uses it instead of the default polygon.
+document.getElementById('use-btn').addEventListener('click', () => {
+  if (yardVertices.length < 3) { toast('Yard needs 3+ vertices'); return; }
+  try {
+    localStorage.setItem('backyard_yard_uv', JSON.stringify(yardVertices));
+    toast('Saved · opening planner');
+    setTimeout(() => { location.href = 'backyard-studio.html'; }, 600);
+  } catch (e) {
+    toast('Save failed — copy manually');
+  }
 });
 
 window.addEventListener('resize', resizeCanvas);
