@@ -801,7 +801,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v47</div>
+<div id="version">v48</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1106,8 +1106,8 @@ scene.add(fenceGroup);
 // polygon vertices 9 → 10 → 11 → ... → 16 → 0 (matching the yard alcove
 // exactly), then extends south by HOUSE_DEPTH ft so the building has volume.
 const HOUSE_BACK_VERTS = [9, 10, 11, 12, 13, 14, 15, 16, 0];
-const HOUSE_DEPTH  = 22;
-const HOUSE_HEIGHT = 7.5;
+const HOUSE_DEPTH  = 35;
+const HOUSE_HEIGHT = 9.5;
 
 const houseShape = new T.Shape();
 const _backPts = HOUSE_BACK_VERTS.map(i => uvToWorld(YARD_UV[i][0], YARD_UV[i][1]));
@@ -1136,7 +1136,7 @@ scene.add(houseWalls);
 // hipped roof on this irregular L/U footprint is a real chunk of custom
 // geometry; the thicker-with-overhang slab reads cleanly at the camera
 // distances the planner uses.
-const ROOF_THICKNESS = 0.5;
+const ROOF_THICKNESS = 0.8;
 const houseRoofGeom = new T.ExtrudeGeometry(houseShape, { depth: ROOF_THICKNESS, bevelEnabled: false });
 houseRoofGeom.rotateX(-Math.PI / 2);
 houseRoofGeom.computeBoundingBox();
@@ -2763,7 +2763,7 @@ function toast(msg) {
 // Camera controls (custom orbit)
 // ============================================================
 const target = new T.Vector3(0, 1, 18);
-const cam = { radius: 78, theta: Math.PI * 0.5, phi: Math.PI * 0.18 };
+const cam = { radius: 60, theta: Math.PI * 0.5, phi: Math.PI * 0.18 };
 
 function updateCam() {
   const x = cam.radius * Math.sin(cam.phi) * Math.cos(cam.theta);
@@ -3288,7 +3288,7 @@ camBtns.forEach(btn => {
     target.set(0, 1, 18);
     const view = btn.dataset.view;
     if (view === 'top')         { cam.theta = Math.PI * 0.5; cam.phi = 0.05; cam.radius = 75; }
-    else if (view === 'perspective') { cam.theta = Math.PI * 0.5; cam.phi = Math.PI * 0.18; cam.radius = 78; }
+    else if (view === 'perspective') { cam.theta = Math.PI * 0.5; cam.phi = Math.PI * 0.18; cam.radius = 60; }
     else if (view === 'front')  { cam.theta = Math.PI * 0.5; cam.phi = Math.PI * 0.38; cam.radius = 62; target.set(0, 2, 8); }
     updateCam();
   });
@@ -3297,7 +3297,7 @@ document.getElementById('reset-cam').addEventListener('click', () => {
   camBtns.forEach(b => b.classList.remove('active'));
   document.querySelector('.cam-btn[data-view="perspective"]').classList.add('active');
   target.set(0, 1, 18);
-  cam.theta = Math.PI * 0.5; cam.phi = Math.PI * 0.18; cam.radius = 78;
+  cam.theta = Math.PI * 0.5; cam.phi = Math.PI * 0.18; cam.radius = 60;
   updateCam();
 });
 
