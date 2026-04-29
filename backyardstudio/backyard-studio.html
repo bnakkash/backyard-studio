@@ -364,7 +364,7 @@
   }
 
   #bottom-bar {
-    bottom: 22px; left: 50%;
+    bottom: calc(22px + var(--safe-bot)); left: 50%;
     transform: translateX(-50%);
     padding: 7px 8px;
     display: flex; gap: 2px;
@@ -412,7 +412,7 @@
 
   #help {
     position: absolute;
-    bottom: 22px; left: 20px;
+    bottom: calc(22px + var(--safe-bot)); left: 20px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     color: var(--text-dim);
@@ -421,7 +421,7 @@
   }
   #scale-bar {
     position: absolute;
-    bottom: 8px; left: 12px;
+    bottom: calc(78px + var(--safe-bot)); left: 12px;
     pointer-events: none;
     user-select: none;
     font-family: 'JetBrains Mono', monospace;
@@ -446,7 +446,7 @@
   }
   #version {
     position: absolute;
-    bottom: 8px; right: 10px;
+    bottom: calc(78px + var(--safe-bot)); right: 10px;
     font-family: 'JetBrains Mono', monospace;
     font-size: 10px;
     letter-spacing: 0.18em;
@@ -890,7 +890,7 @@
     .sun-now { font-size: 9px; padding: 4px 7px; }
 
     #bottom-bar {
-      bottom: 14px;
+      bottom: calc(14px + var(--safe-bot));
       padding: 5px 5px;
     }
     .cam-btn {
@@ -1075,7 +1075,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v56</div>
+<div id="version">v57</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1385,8 +1385,8 @@ const HOUSE_EDGE_STARTS    = new Set([9, 10, 11, 12, 13, 14, 15, 16]);
 const HOUSE_INTERIOR_VERTS = new Set([10, 11, 12, 13, 14, 15, 16]);
 const fenceGroup = new T.Group();        // always-visible fence (yard edges)
 const fenceHouseGroup = new T.Group();   // house-edge fence — visible only when house hidden
-const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xf2ede0 });
-const fenceTopMat  = new T.MeshLambertMaterial({ color: 0xe6dfce });
+const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xa67c52 });
+const fenceTopMat  = new T.MeshLambertMaterial({ color: 0x7a5634 });
 
 // Build a wood-picket fence segment from (x1,z1) → (x2,z2): two horizontal
 // stringers (top + middle) plus vertical pickets at ~6 inch spacing.
