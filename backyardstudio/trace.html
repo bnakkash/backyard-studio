@@ -1,0 +1,739 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#12150e">
+<title>Trace Yard · Backyard Studio</title>
+<link rel="icon" href="icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="icon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500&family=Manrope:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #12150e;
+    --panel: #1c2118;
+    --panel-hi: #262c21;
+    --border: #353c2c;
+    --border-hi: #4a5239;
+    --text: #f2ede0;
+    --text-dim: #9ea290;
+    --text-dimmer: #6a6e60;
+    --accent: #d4a574;
+    --accent-hi: #e6bb83;
+    --danger: #c86a5b;
+    --good: #87b06a;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body {
+    height: 100%;
+    background: var(--bg);
+    color: var(--text);
+    font-family: 'Manrope', system-ui, sans-serif;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+  }
+  .screen {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    padding: 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .screen.hidden { display: none; }
+  h1 {
+    font-family: 'Fraunces', serif;
+    font-size: 28px;
+    font-weight: 500;
+    letter-spacing: -0.02em;
+    margin-bottom: 6px;
+  }
+  h1 .dot {
+    display: inline-block;
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: var(--accent);
+    margin-right: 10px;
+    vertical-align: middle;
+    margin-bottom: 4px;
+  }
+  .subtitle {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.22em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    margin-bottom: 22px;
+  }
+  p { font-size: 14px; line-height: 1.55; color: var(--text-dim); margin-bottom: 14px; }
+  ol { padding-left: 18px; margin-bottom: 18px; }
+  ol li { font-size: 13px; line-height: 1.7; color: var(--text-dim); }
+  ol li strong { color: var(--text); font-weight: 500; }
+  .panel {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  label { display: block; font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  input[type="number"] {
+    width: 100%;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 12px;
+    font-size: 16px;
+    font-family: 'JetBrains Mono', monospace;
+    border-radius: 3px;
+    outline: none;
+  }
+  input[type="number"]:focus { border-color: var(--accent); }
+  .btn {
+    display: block;
+    width: 100%;
+    padding: 14px 18px;
+    background: transparent;
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: 'Manrope', sans-serif;
+    font-size: 14px;
+    font-weight: 500;
+    border-radius: 3px;
+    cursor: pointer;
+    transition: all 0.12s;
+    letter-spacing: 0.02em;
+    margin-bottom: 10px;
+  }
+  .btn:active { transform: scale(0.98); }
+  .btn:disabled { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+  .btn.primary {
+    background: var(--accent);
+    color: #1a1a1a;
+    border-color: var(--accent);
+  }
+  .btn.primary:active { background: var(--accent-hi); }
+  .btn.danger { border-color: rgba(200,106,91,0.4); color: var(--danger); }
+  .btn.ghost { background: transparent; color: var(--text-dim); border-color: transparent; }
+  .btn.ghost:active { color: var(--text); }
+  .btn.row-half { display: inline-block; width: calc(50% - 5px); }
+  .btn-row { display: flex; gap: 8px; }
+  .btn-row .btn { margin-bottom: 10px; }
+
+  .status-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr 1fr;
+    gap: 8px;
+    margin-bottom: 14px;
+  }
+  .status-cell {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 10px;
+    text-align: center;
+  }
+  .status-cell .label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 8.5px;
+    color: var(--text-dim);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-bottom: 4px;
+  }
+  .status-cell .value {
+    font-family: 'Fraunces', serif;
+    font-size: 26px;
+    color: var(--text);
+    font-weight: 500;
+    line-height: 1;
+  }
+  .status-cell .unit {
+    font-size: 11px;
+    color: var(--text-dim);
+  }
+
+  #map, #result-map {
+    width: 100%;
+    aspect-ratio: 1 / 1;
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    margin-bottom: 14px;
+    display: block;
+  }
+
+  textarea {
+    width: 100%;
+    min-height: 110px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    padding: 10px 12px;
+    font-size: 11px;
+    font-family: 'JetBrains Mono', monospace;
+    border-radius: 3px;
+    outline: none;
+    resize: vertical;
+    margin-bottom: 14px;
+  }
+
+  .hint {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dimmer);
+    letter-spacing: 0.05em;
+    margin-bottom: 14px;
+    line-height: 1.7;
+  }
+
+  .toast {
+    position: fixed;
+    top: 24px; left: 50%;
+    transform: translateX(-50%) translateY(-12px);
+    background: rgba(28,33,24,0.96);
+    border: 1px solid var(--accent);
+    padding: 10px 18px;
+    border-radius: 100px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    color: var(--accent);
+    text-transform: uppercase;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.25s, transform 0.25s;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+  .compass-vis {
+    width: 90px; height: 90px;
+    margin: 0 auto 14px;
+    position: relative;
+    border: 1px solid var(--border);
+    border-radius: 50%;
+    background: var(--panel);
+  }
+  .compass-vis::before {
+    content: 'N';
+    position: absolute;
+    top: 4px; left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Fraunces', serif;
+    font-size: 12px;
+    color: var(--accent);
+  }
+  .compass-needle {
+    position: absolute;
+    inset: 0;
+    transition: transform 0.1s ease-out;
+  }
+  .compass-needle::after {
+    content: '';
+    position: absolute;
+    top: 8px; left: 50%;
+    transform: translateX(-50%);
+    width: 2px;
+    height: 36px;
+    background: var(--accent);
+    border-radius: 2px;
+  }
+</style>
+</head>
+<body>
+
+<!-- ============================ SETUP ============================ -->
+<div id="screen-setup" class="screen">
+  <h1><span class="dot"></span>Trace Yard</h1>
+  <div class="subtitle">Walk · Tap · Done</div>
+
+  <p>Walk the perimeter of your yard, tapping <strong>Mark Corner</strong> at each fence post. Your phone uses its compass and a step counter to figure out where each corner is relative to the others.</p>
+
+  <ol>
+    <li>Stand at <strong>any corner</strong> of your yard.</li>
+    <li>Tap <strong>Start Tracing</strong>, then walk to the next corner.</li>
+    <li>Tap <strong>Mark Corner</strong> at each one.</li>
+    <li>When you walk back to the first corner, tap <strong>Close Loop</strong>.</li>
+  </ol>
+
+  <div class="panel">
+    <label for="stride">Your stride length (feet)</label>
+    <input type="number" id="stride" value="2.5" step="0.1" min="1" max="5">
+    <div class="hint" style="margin-top:8px; margin-bottom:0">
+      Average adult: 2.5 ft. If you're tall, try 2.8. If your traced shape ends up too small or too big, this is the knob.
+    </div>
+  </div>
+
+  <button class="btn primary" id="grant-perms">Grant Motion Access</button>
+  <button class="btn" id="start-trace" disabled>Start Tracing</button>
+
+  <div class="hint">
+    Best on iOS Safari. iOS will ask permission to read motion + orientation — that's the compass and step counter. We don't store or upload anything.
+  </div>
+</div>
+
+<!-- ============================ TRACING ============================ -->
+<div id="screen-trace" class="screen hidden">
+  <h1><span class="dot"></span>Walking…</h1>
+  <div class="subtitle">Tap Mark Corner at each fence post</div>
+
+  <div class="compass-vis">
+    <div class="compass-needle" id="compass-needle"></div>
+  </div>
+
+  <div class="status-grid">
+    <div class="status-cell">
+      <div class="label">Steps</div>
+      <div class="value" id="steps-val">0</div>
+    </div>
+    <div class="status-cell">
+      <div class="label">Heading</div>
+      <div class="value" id="heading-val">0<span class="unit">°</span></div>
+    </div>
+    <div class="status-cell">
+      <div class="label">Corners</div>
+      <div class="value" id="corner-val">0</div>
+    </div>
+  </div>
+
+  <canvas id="map" width="600" height="600"></canvas>
+
+  <button class="btn primary" id="mark-corner">Mark Corner</button>
+  <div class="btn-row">
+    <button class="btn" id="undo-corner">Undo Last</button>
+    <button class="btn" id="close-loop" disabled>Close Loop</button>
+  </div>
+  <button class="btn ghost" id="abort-trace">Cancel</button>
+</div>
+
+<!-- ============================ RESULT ============================ -->
+<div id="screen-result" class="screen hidden">
+  <h1><span class="dot"></span>Yard Mapped</h1>
+  <div class="subtitle" id="result-subtitle">Polygon closed</div>
+
+  <canvas id="result-map" width="600" height="600"></canvas>
+
+  <div class="hint" id="result-stats"></div>
+
+  <label style="margin-bottom:6px">Polygon points (feet, relative)</label>
+  <textarea id="output" readonly></textarea>
+
+  <button class="btn primary" id="copy-output">Copy JSON</button>
+  <button class="btn" id="restart">Trace Again</button>
+  <a class="btn ghost" href="backyard-studio.html" style="text-align:center; text-decoration:none">Back to Planner</a>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ============================================================
+// State
+// ============================================================
+let stride = 2.5;          // feet per step
+let corners = [];          // [{ x, z }] in feet, x = east, z = south
+let steps = 0;             // steps since last marked corner
+let stepsTotal = 0;        // for stats
+let currentHeading = 0;    // degrees from north, 0..360
+let lastStepTime = 0;
+let lastMag = 0;
+let isTracing = false;
+
+// Step detector tuning. Walking spikes the magnitude of acceleration (with
+// gravity removed) above ~1.2 m/s² each footfall; refractory of ~280ms keeps
+// us from double-counting a single step.
+const STEP_THRESHOLD = 1.4;
+const STEP_REFRACTORY = 280;
+
+// ============================================================
+// Toast
+// ============================================================
+let toastT;
+function toast(msg) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(toastT);
+  toastT = setTimeout(() => el.classList.remove('show'), 1800);
+}
+
+// ============================================================
+// Sensor wiring
+// ============================================================
+async function grantPermissions() {
+  let motionOK = true, orientationOK = true;
+  try {
+    if (typeof DeviceMotionEvent !== 'undefined' &&
+        typeof DeviceMotionEvent.requestPermission === 'function') {
+      motionOK = (await DeviceMotionEvent.requestPermission()) === 'granted';
+    }
+    if (typeof DeviceOrientationEvent !== 'undefined' &&
+        typeof DeviceOrientationEvent.requestPermission === 'function') {
+      orientationOK = (await DeviceOrientationEvent.requestPermission()) === 'granted';
+    }
+  } catch (err) {
+    console.warn('Permission error:', err);
+    toast('Permission error');
+    return false;
+  }
+  return motionOK && orientationOK;
+}
+
+function attachSensors() {
+  // Compass heading. Prefer iOS-specific webkitCompassHeading because it's
+  // already absolute (0=N, increasing clockwise). On other browsers, fall
+  // back to (360 - alpha) which is approximate.
+  window.addEventListener('deviceorientation', (e) => {
+    let h = null;
+    if (typeof e.webkitCompassHeading === 'number') {
+      h = e.webkitCompassHeading;
+    } else if (e.absolute && typeof e.alpha === 'number') {
+      h = (360 - e.alpha) % 360;
+    } else if (typeof e.alpha === 'number') {
+      h = (360 - e.alpha) % 360;
+    }
+    if (h != null && !isNaN(h)) {
+      currentHeading = h;
+      updateCompassUI();
+    }
+  }, true);
+
+  // Step detector. Peak-pick on the magnitude of acceleration with gravity
+  // removed. iOS gives e.acceleration (gravity already subtracted); Android
+  // sometimes only provides accelerationIncludingGravity, so we estimate by
+  // subtracting a slow-following baseline.
+  let baseline = 9.81;
+  window.addEventListener('devicemotion', (e) => {
+    let mag;
+    if (e.acceleration && e.acceleration.x != null) {
+      const a = e.acceleration;
+      mag = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+    } else if (e.accelerationIncludingGravity) {
+      const a = e.accelerationIncludingGravity;
+      const total = Math.sqrt(a.x * a.x + a.y * a.y + a.z * a.z);
+      // Slow-follow gravity baseline so we end up with the high-frequency part
+      baseline = baseline * 0.97 + total * 0.03;
+      mag = Math.abs(total - baseline);
+    } else {
+      return;
+    }
+    const now = performance.now();
+    // Rising-edge detector with a refractory period
+    if (mag > STEP_THRESHOLD &&
+        lastMag <= STEP_THRESHOLD &&
+        (now - lastStepTime) > STEP_REFRACTORY) {
+      lastStepTime = now;
+      if (isTracing) {
+        steps++;
+        stepsTotal++;
+        updateReadout();
+        drawMap();
+      }
+    }
+    lastMag = mag;
+  }, true);
+}
+
+// ============================================================
+// UI updates
+// ============================================================
+function updateCompassUI() {
+  const el = document.getElementById('compass-needle');
+  if (el) el.style.transform = `rotate(${-currentHeading}deg)`;
+  if (isTracing) {
+    document.getElementById('heading-val').innerHTML =
+      Math.round(currentHeading) + '<span class="unit">°</span>';
+  }
+}
+function updateReadout() {
+  document.getElementById('steps-val').textContent = steps;
+  document.getElementById('corner-val').textContent = Math.max(0, corners.length - 1);
+  document.getElementById('heading-val').innerHTML =
+    Math.round(currentHeading) + '<span class="unit">°</span>';
+  document.getElementById('close-loop').disabled = corners.length < 4;
+}
+
+// ============================================================
+// Map drawing
+// ============================================================
+function headingToVec(headingDeg) {
+  const r = headingDeg * Math.PI / 180;
+  // Heading 0 = north = -Z, 90 = east = +X, 180 = south = +Z
+  return { x: Math.sin(r), z: -Math.cos(r) };
+}
+
+function currentEstimate() {
+  // Tentative position based on steps since last corner + current heading
+  if (corners.length === 0) return { x: 0, z: 0 };
+  const last = corners[corners.length - 1];
+  const dist = steps * stride;
+  const dir = headingToVec(currentHeading);
+  return { x: last.x + dir.x * dist, z: last.z + dir.z * dist };
+}
+
+function drawMap(canvasId, points, options) {
+  const canvas = document.getElementById(canvasId || 'map');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+
+  const pts = points || [...corners];
+  const tent = isTracing && (!options || !options.noTentative) ? currentEstimate() : null;
+  const all = tent ? pts.concat([tent]) : pts;
+  if (all.length === 0) return;
+
+  // Bounding box with padding
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  for (const p of all) {
+    if (p.x < minX) minX = p.x;
+    if (p.x > maxX) maxX = p.x;
+    if (p.z < minZ) minZ = p.z;
+    if (p.z > maxZ) maxZ = p.z;
+  }
+  const pad = 6; // feet of padding
+  minX -= pad; maxX += pad; minZ -= pad; maxZ += pad;
+  const bw = maxX - minX || 20;
+  const bh = maxZ - minZ || 20;
+  const margin = 24;
+  const scale = Math.min((w - 2 * margin) / bw, (h - 2 * margin) / bh);
+  const ox = (w - bw * scale) / 2 - minX * scale;
+  const oy = (h - bh * scale) / 2 - minZ * scale;
+  const project = (p) => ({ x: p.x * scale + ox, y: p.z * scale + oy });
+
+  // Grid (every 5 ft)
+  ctx.strokeStyle = '#262c21';
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  const gridStep = 5 * scale;
+  if (gridStep > 6) {
+    for (let gx = ox + Math.floor(minX / 5) * 5 * scale; gx < w; gx += gridStep) {
+      ctx.moveTo(gx, 0); ctx.lineTo(gx, h);
+    }
+    for (let gy = oy + Math.floor(minZ / 5) * 5 * scale; gy < h; gy += gridStep) {
+      ctx.moveTo(0, gy); ctx.lineTo(w, gy);
+    }
+    ctx.stroke();
+  }
+
+  // Polygon fill (only when closed / multiple corners)
+  if (pts.length >= 3) {
+    ctx.fillStyle = 'rgba(212, 165, 116, 0.08)';
+    ctx.beginPath();
+    pts.forEach((p, i) => {
+      const v = project(p);
+      i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y);
+    });
+    if (!isTracing) ctx.closePath();
+    ctx.fill();
+  }
+
+  // Sides drawn so far (bright)
+  ctx.strokeStyle = '#d4a574';
+  ctx.lineWidth = 2;
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  pts.forEach((p, i) => {
+    const v = project(p);
+    i === 0 ? ctx.moveTo(v.x, v.y) : ctx.lineTo(v.x, v.y);
+  });
+  if (!isTracing) ctx.closePath();
+  ctx.stroke();
+
+  // Tentative segment (dashed) from last corner to estimated position
+  if (tent && pts.length > 0) {
+    const a = project(pts[pts.length - 1]);
+    const b = project(tent);
+    ctx.setLineDash([6, 6]);
+    ctx.strokeStyle = '#9ea290';
+    ctx.beginPath();
+    ctx.moveTo(a.x, a.y);
+    ctx.lineTo(b.x, b.y);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    // Walking-person dot at estimate
+    ctx.fillStyle = '#e6bb83';
+    ctx.beginPath();
+    ctx.arc(b.x, b.y, 6, 0, Math.PI * 2);
+    ctx.fill();
+    // Heading arrow
+    const dir = headingToVec(currentHeading);
+    ctx.strokeStyle = '#e6bb83';
+    ctx.lineWidth = 2;
+    ctx.beginPath();
+    ctx.moveTo(b.x, b.y);
+    ctx.lineTo(b.x + dir.x * 14, b.y + dir.z * 14);
+    ctx.stroke();
+  }
+
+  // Corner dots
+  pts.forEach((p, i) => {
+    const v = project(p);
+    ctx.fillStyle = i === 0 ? '#87b06a' : '#d4a574';
+    ctx.beginPath();
+    ctx.arc(v.x, v.y, 5, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.fillStyle = '#1a1a1a';
+    ctx.font = '11px JetBrains Mono, monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(String(i + 1), v.x, v.y + 0.5);
+  });
+}
+
+// ============================================================
+// Trace flow
+// ============================================================
+document.getElementById('grant-perms').addEventListener('click', async () => {
+  const ok = await grantPermissions();
+  if (ok) {
+    attachSensors();
+    document.getElementById('start-trace').disabled = false;
+    document.getElementById('grant-perms').disabled = true;
+    document.getElementById('grant-perms').textContent = '✓ Motion Access Granted';
+    toast('Sensors ready');
+  } else {
+    toast('Permission denied');
+  }
+});
+
+document.getElementById('start-trace').addEventListener('click', () => {
+  stride = parseFloat(document.getElementById('stride').value) || 2.5;
+  corners = [{ x: 0, z: 0 }];
+  steps = 0;
+  stepsTotal = 0;
+  isTracing = true;
+  showScreen('trace');
+  drawMap();
+  updateReadout();
+});
+
+document.getElementById('mark-corner').addEventListener('click', () => {
+  if (!isTracing) return;
+  const last = corners[corners.length - 1];
+  const dist = steps * stride;
+  const dir = headingToVec(currentHeading);
+  corners.push({ x: last.x + dir.x * dist, z: last.z + dir.z * dist });
+  steps = 0;
+  if (typeof navigator !== 'undefined' && navigator.vibrate) navigator.vibrate(10);
+  drawMap();
+  updateReadout();
+  toast(`Corner ${corners.length - 1}`);
+});
+
+document.getElementById('undo-corner').addEventListener('click', () => {
+  if (corners.length <= 1) { toast('Nothing to undo'); return; }
+  corners.pop();
+  steps = 0;
+  drawMap();
+  updateReadout();
+  toast('Undone');
+});
+
+document.getElementById('close-loop').addEventListener('click', () => {
+  if (corners.length < 3) { toast('Need at least 3 corners'); return; }
+  // Add the final segment back to corner 1 using current step count + heading,
+  // then apply the Bowditch (compass-rule) correction so the polygon closes.
+  const last = corners[corners.length - 1];
+  const dist = steps * stride;
+  const dir = headingToVec(currentHeading);
+  const closingPt = { x: last.x + dir.x * dist, z: last.z + dir.z * dist };
+  // The "should be (0,0)" error vector
+  const errX = closingPt.x;
+  const errZ = closingPt.z;
+  // Distribute proportionally to leg length
+  const legs = [];
+  // legs[i] = length from corner[i] to corner[i+1]; final leg is corners[last] → closingPt
+  for (let i = 0; i < corners.length - 1; i++) {
+    legs.push(Math.hypot(corners[i + 1].x - corners[i].x, corners[i + 1].z - corners[i].z));
+  }
+  legs.push(Math.hypot(closingPt.x - last.x, closingPt.z - last.z));
+  const total = legs.reduce((a, b) => a + b, 0) || 1;
+  let cum = 0;
+  for (let i = 1; i < corners.length; i++) {
+    cum += legs[i - 1];
+    const f = cum / total;
+    corners[i].x -= errX * f;
+    corners[i].z -= errZ * f;
+  }
+  isTracing = false;
+  finalizeAndShow();
+});
+
+document.getElementById('abort-trace').addEventListener('click', () => {
+  if (!confirm('Cancel and start over?')) return;
+  isTracing = false;
+  corners = [];
+  steps = 0;
+  showScreen('setup');
+});
+
+// ============================================================
+// Result
+// ============================================================
+function finalizeAndShow() {
+  // Compute stats
+  let perimeter = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    perimeter += Math.hypot(b.x - a.x, b.z - a.z);
+  }
+  // Shoelace area
+  let area = 0;
+  for (let i = 0; i < corners.length; i++) {
+    const a = corners[i];
+    const b = corners[(i + 1) % corners.length];
+    area += a.x * b.z - b.x * a.z;
+  }
+  area = Math.abs(area) / 2;
+
+  document.getElementById('result-stats').textContent =
+    `${corners.length} corners · ${stepsTotal} steps · ` +
+    `~${Math.round(perimeter)} ft perimeter · ~${Math.round(area)} sq ft`;
+  document.getElementById('result-subtitle').textContent =
+    `${corners.length}-sided polygon · closed`;
+
+  // Output JSON in feet
+  const json = JSON.stringify(
+    corners.map(c => ({ x: +c.x.toFixed(2), z: +c.z.toFixed(2) })),
+    null, 2
+  );
+  document.getElementById('output').value = json;
+
+  showScreen('result');
+  drawMap('result-map', corners, { noTentative: true });
+}
+
+document.getElementById('copy-output').addEventListener('click', async () => {
+  const text = document.getElementById('output').value;
+  try {
+    await navigator.clipboard.writeText(text);
+    toast('Copied to clipboard');
+  } catch (_) {
+    document.getElementById('output').select();
+    toast('Select-all → copy');
+  }
+});
+
+document.getElementById('restart').addEventListener('click', () => {
+  corners = [];
+  steps = 0;
+  stepsTotal = 0;
+  isTracing = false;
+  showScreen('setup');
+});
+
+function showScreen(name) {
+  for (const id of ['setup', 'trace', 'result']) {
+    document.getElementById('screen-' + id).classList.toggle('hidden', id !== name);
+  }
+}
+</script>
+
+</body>
+</html>
