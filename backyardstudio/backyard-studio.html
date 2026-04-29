@@ -498,6 +498,34 @@
     padding: 7px 12px;
     z-index: 10;
   }
+  #edit-bar {
+    position: absolute;
+    top: 16px; left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    z-index: 22;
+  }
+  #edit-bar[hidden] { display: none; }
+  #edit-bar .edit-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--accent);
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    margin-right: 6px;
+  }
+  #edit-bar .cam-btn.primary {
+    color: #1a1a1a; background: var(--accent);
+  }
+  body.edit-yard #sun-bar { display: none; }
+  body.edit-yard #left-panel,
+  body.edit-yard #right-panel,
+  body.edit-yard #bottom-bar,
+  body.edit-yard #compass,
+  body.edit-yard #mobile-toggle { display: none !important; }
   .sun-icon {
     font-size: 14px;
     color: var(--accent);
@@ -720,6 +748,13 @@
   <span class="n">N</span>
 </button>
 
+<div id="edit-bar" class="panel" hidden>
+  <span class="edit-label">Edit boundary</span>
+  <button class="cam-btn" id="edit-reset">Reset</button>
+  <button class="cam-btn" id="edit-cancel">Cancel</button>
+  <button class="cam-btn primary" id="edit-save">Save</button>
+</div>
+
 <div id="sun-bar" class="panel">
   <span class="sun-icon">☀</span>
   <span class="sun-time" id="sun-time">12:00 PM</span>
@@ -731,7 +766,12 @@
 <div id="left-panel" class="panel">
   <div class="panel-header">
     <div class="panel-title"><span class="dot"></span>Backyard Studio</div>
-    <div class="subtitle">Landscape Planner · <a href="trace.html" style="color:var(--accent);text-decoration:none">Trace yard ›</a></div>
+    <div class="subtitle">
+      Landscape Planner ·
+      <a href="trace.html" style="color:var(--accent);text-decoration:none">Trace ›</a>
+      &nbsp;·&nbsp;
+      <a href="#" id="edit-yard-link" style="color:var(--accent);text-decoration:none">Edit boundary ›</a>
+    </div>
   </div>
   <div class="palette" id="palette"></div>
 </div>
@@ -801,7 +841,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v48</div>
+<div id="version">v49</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -999,8 +1039,9 @@ const GROUND_W = 80;
 const GROUND_D = 91;
 const YARD_W = GROUND_W, YARD_D = GROUND_D;
 
-// UV-space coords (0..1, photo space). Traced by user from their aerial photo.
-const YARD_UV = [
+// Default UV-space coords (0..1, photo space). User-edited boundary
+// overrides this from localStorage.
+const YARD_UV_DEFAULT = [
   [0.3377, 0.9313],
   [0.2083, 0.9329],
   [0.1764, 0.8043],
@@ -1019,6 +1060,20 @@ const YARD_UV = [
   [0.4389, 0.7668],
   [0.3383, 0.7746],
 ];
+const YARD_UV = (() => {
+  try {
+    const s = localStorage.getItem('backyard_yard_uv');
+    if (s) {
+      const parsed = JSON.parse(s);
+      if (Array.isArray(parsed) && parsed.length >= 3
+          && parsed.every(p => Array.isArray(p) && p.length === 2
+                             && typeof p[0] === 'number' && typeof p[1] === 'number')) {
+        return parsed;
+      }
+    }
+  } catch (_) {}
+  return YARD_UV_DEFAULT.map(p => [p[0], p[1]]);
+})();
 
 // Convert UV to world XZ. Photo spans [-GROUND_W/2..+GROUND_W/2] x [-GROUND_D/2..+GROUND_D/2].
 // u=0 → -W/2 (west), u=1 → +W/2 (east). v=0 → -D/2 (north/back), v=1 → +D/2 (south/front).
@@ -2784,6 +2839,12 @@ canvas.addEventListener('mousedown', e => {
   lastMouse = { x: e.clientX, y: e.clientY };
   dragStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   didDrag = false;
+  // Yard-edit mode: clicking on a handle starts a drag, anything else is no-op.
+  if (yardEditMode) {
+    const h = pickYardHandle(e);
+    if (h) yardEditDrag = { handle: h, vertexIndex: h.userData.vertexIndex };
+    return;
+  }
   if (e.button === 0) {
     mouseState = 'left';
     if (!selectedKind) {
@@ -2800,6 +2861,7 @@ canvas.addEventListener('mousedown', e => {
 });
 
 window.addEventListener('mouseup', e => {
+  if (yardEditMode) { yardEditDrag = null; return; }
   if (!mouseState) return;
   canvas.classList.remove('panning');
   const dur = performance.now() - (dragStart ? dragStart.t : 0);
@@ -2837,6 +2899,10 @@ window.addEventListener('mouseup', e => {
 });
 
 canvas.addEventListener('mousemove', e => {
+  if (yardEditMode) {
+    if (yardEditDrag) dragYardHandle(e);
+    return;
+  }
   const dx = e.clientX - lastMouse.x;
   const dy = e.clientY - lastMouse.y;
   if (mouseState && !didDrag) {
@@ -2969,6 +3035,14 @@ const LOCK_DOMINANCE = 1.3; // winner must be this much over the runner-up
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
+  if (yardEditMode) {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      const h = pickYardHandle(t);
+      if (h) yardEditDrag = { handle: h, vertexIndex: h.userData.vertexIndex };
+    }
+    return;
+  }
   stopInertia();
   // Fresh gesture begins → re-arm the lock
   twoFingerMode = null;
@@ -3005,6 +3079,10 @@ canvas.addEventListener('touchstart', e => {
 
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
+  if (yardEditMode) {
+    if (yardEditDrag && e.touches.length === 1) dragYardHandle(e.touches[0]);
+    return;
+  }
   if (touchState === 'one' && e.touches.length === 1) {
     const t = e.touches[0];
     const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
@@ -3122,6 +3200,10 @@ canvas.addEventListener('touchmove', e => {
 }, { passive: false });
 
 canvas.addEventListener('touchend', e => {
+  if (yardEditMode) {
+    if (e.touches.length === 0) yardEditDrag = null;
+    return;
+  }
   // Tap → place or select (only when there was no drag and all fingers are up)
   if (touchState === 'one' && !didDrag && e.touches.length === 0 && e.changedTouches.length === 1) {
     const t = e.changedTouches[0];
@@ -3347,6 +3429,108 @@ compassEl.addEventListener('touchend', (e) => {
   e.preventDefault();
   faceNorth();
 }, { passive: false });
+
+// ============================================================
+// Editable yard boundary — drag corner handles in a top-down edit
+// session. Save writes back to YARD_UV in localStorage and reloads
+// so the yard / fence / house geometry rebuilds cleanly.
+// ============================================================
+let yardEditMode = false;
+let yardHandles = [];          // T.Mesh per polygon vertex
+let yardEditDrag = null;       // { handle, vertexIndex }
+let _editSavedCam = null;
+
+function enterYardEdit() {
+  if (yardEditMode) return;
+  yardEditMode = true;
+  document.body.classList.add('edit-yard');
+  document.getElementById('edit-bar').hidden = false;
+  // Save and force a top-down camera so the user can see all corners.
+  _editSavedCam = {
+    theta: cam.theta, phi: cam.phi, radius: cam.radius, target: target.clone()
+  };
+  cam.theta = Math.PI * 0.5;
+  cam.phi = 0.05;
+  cam.radius = 95;
+  target.set(0, 0, 8);
+  updateCam();
+  // Spawn a handle for each polygon vertex.
+  yardHandles.forEach(h => { scene.remove(h); disposeTree(h); });
+  yardHandles = YARD_UV.map(([u, v], i) => {
+    const [x, z] = uvToWorld(u, v);
+    const h = new T.Mesh(
+      new T.SphereGeometry(0.9, 16, 12),
+      new T.MeshBasicMaterial({ color: 0xd4a574 })
+    );
+    h.position.set(x, 4, z);
+    h.userData.isYardHandle = true;
+    h.userData.vertexIndex = i;
+    scene.add(h);
+    return h;
+  });
+  toast('Drag corners to reshape · Save when done');
+}
+
+function exitYardEdit(reload) {
+  yardEditMode = false;
+  document.body.classList.remove('edit-yard');
+  document.getElementById('edit-bar').hidden = true;
+  yardHandles.forEach(h => { scene.remove(h); disposeTree(h); });
+  yardHandles = [];
+  yardEditDrag = null;
+  if (_editSavedCam) {
+    cam.theta = _editSavedCam.theta;
+    cam.phi = _editSavedCam.phi;
+    cam.radius = _editSavedCam.radius;
+    target.copy(_editSavedCam.target);
+    updateCam();
+    _editSavedCam = null;
+  }
+  if (reload) location.reload();
+}
+
+function pickYardHandle(e) {
+  if (!yardEditMode || !yardHandles.length) return null;
+  setRay(e);
+  const hits = raycaster.intersectObjects(yardHandles, false);
+  return hits.length ? hits[0].object : null;
+}
+function dragYardHandle(e) {
+  if (!yardEditDrag) return;
+  const pt = groundPick(e);
+  if (!pt) return;
+  const h = yardEditDrag.handle;
+  h.position.x = pt.x;
+  h.position.z = pt.z;
+  // Update YARD_UV in place for live preview (shape only — full rebuild
+  // happens on Save via reload).
+  const u = pt.x / GROUND_W + 0.5;
+  const v = pt.z / GROUND_D + 0.5;
+  YARD_UV[yardEditDrag.vertexIndex] = [
+    Math.max(0, Math.min(1, u)),
+    Math.max(0, Math.min(1, v))
+  ];
+}
+
+document.getElementById('edit-yard-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  enterYardEdit();
+});
+document.getElementById('edit-cancel').addEventListener('click', () => {
+  // Revert to whatever's in localStorage (or default if none) by reloading.
+  exitYardEdit(true);
+});
+document.getElementById('edit-save').addEventListener('click', () => {
+  try { localStorage.setItem('backyard_yard_uv', JSON.stringify(YARD_UV)); }
+  catch (_) { toast('Save failed'); return; }
+  toast('Boundary saved');
+  exitYardEdit(true);
+});
+document.getElementById('edit-reset').addEventListener('click', () => {
+  if (!confirm('Reset boundary to default? This will discard your edits.')) return;
+  try { localStorage.removeItem('backyard_yard_uv'); } catch (_) {}
+  exitYardEdit(true);
+});
 
 // ============================================================
 // Render loop
