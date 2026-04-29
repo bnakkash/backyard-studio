@@ -841,7 +841,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v49</div>
+<div id="version">v50</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2124,13 +2124,19 @@ function clearPaletteSelection() {
 // Placed items state
 // ============================================================
 const placed = [];
-let selection = null;
+let selection = null;          // Primary selection (last clicked)
+let selectionSet = new Set();  // Full multi-selection (always includes selection)
 
+// Single-selection version: replaces selectionSet with just this item.
+// Used by tap-to-select and most call sites; multi-select uses toggleInSelection.
 function selectItem(item) {
   const changed = item !== selection;
-  if (selection) setOutline(selection, false);
+  // Clear all current outlines
+  for (const it of selectionSet) setOutline(it, false);
+  selectionSet.clear();
   selection = item;
   if (item) {
+    selectionSet.add(item);
     setOutline(item, true);
     refreshSelectionPanel();
     setSelectionSheetVisible(true);
@@ -2141,6 +2147,66 @@ function selectItem(item) {
     document.getElementById('selection-controls').style.display = 'none';
     setSelectionSheetVisible(false);
   }
+}
+
+// Multi-select: toggle membership in selectionSet, leaving the rest intact.
+// Sets the last-toggled-on item as the new primary.
+// Bulk-drag scratch: captured once when drag starts, applied each frame.
+let dragOffsets = [];
+function captureDragOffsets() {
+  dragOffsets = [];
+  if (!dragItem || selectionSet.size <= 1 || !selectionSet.has(dragItem)) return;
+  const ax = dragItem.mesh.position.x, az = dragItem.mesh.position.z;
+  for (const it of selectionSet) {
+    if (it === dragItem) continue;
+    dragOffsets.push({
+      item: it,
+      dx: it.mesh.position.x - ax,
+      dz: it.mesh.position.z - az
+    });
+  }
+}
+function applyDragMove(newX, newZ) {
+  const sx = snap(newX), sz = snap(newZ);
+  dragItem.mesh.position.x = sx;
+  dragItem.mesh.position.z = sz;
+  if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
+  for (const off of dragOffsets) {
+    off.item.mesh.position.x = sx + off.dx;
+    off.item.mesh.position.z = sz + off.dz;
+    if (off.item.outlineWrapper) off.item.outlineWrapper.position.copy(off.item.mesh.position);
+  }
+}
+
+function toggleInSelection(item) {
+  if (!item) return;
+  if (selectionSet.has(item)) {
+    selectionSet.delete(item);
+    setOutline(item, false);
+    if (selection === item) {
+      selection = selectionSet.size > 0 ? selectionSet.values().next().value : null;
+    }
+  } else {
+    selectionSet.add(item);
+    setOutline(item, true);
+    selection = item;
+  }
+  if (selection) {
+    refreshSelectionPanel();
+    setSelectionSheetVisible(true);
+  } else {
+    document.getElementById('selection-info').innerHTML =
+      '<div class="empty">Pick an item at left, then tap the yard to place it. Tap placed items to edit, then drag to move.</div>';
+    document.getElementById('selection-controls').style.display = 'none';
+    setSelectionSheetVisible(false);
+  }
+  // Update header to indicate count when more than one
+  if (selectionSet.size > 1) {
+    const info = document.getElementById('selection-info');
+    if (info) info.innerHTML = `<div class="sel-name">${selectionSet.size} items</div>` +
+      `<div class="sel-cat">multi-selection · drag to move all · delete removes all</div>`;
+  }
+  if (typeof haptic === 'function') haptic(6);
 }
 
 function setOutline(item, on) {
@@ -2609,15 +2675,20 @@ document.getElementById('delete-btn').addEventListener('click', deleteSelected);
 document.getElementById('duplicate-btn').addEventListener('click', duplicateSelected);
 
 function deleteSelected() {
-  if (!selection) return;
+  // Bulk-aware: deletes everything in selectionSet (which always includes
+  // primary selection if there is one).
+  if (selectionSet.size === 0) return;
   haptic([12, 20, 12]);
-  scene.remove(selection.mesh);
-  disposeTree(selection.mesh);
-  if (selection.outlineWrapper) {
-    scene.remove(selection.outlineWrapper);
-    disposeTree(selection.outlineWrapper);
+  for (const it of selectionSet) {
+    scene.remove(it.mesh);
+    disposeTree(it.mesh);
+    if (it.outlineWrapper) {
+      scene.remove(it.outlineWrapper);
+      disposeTree(it.outlineWrapper);
+    }
+    const idx = placed.indexOf(it);
+    if (idx >= 0) placed.splice(idx, 1);
   }
-  placed.splice(placed.indexOf(selection), 1);
   selectItem(null);
   pushHistory();
 }
@@ -2852,7 +2923,7 @@ canvas.addEventListener('mousedown', e => {
       // Only the already-selected item is grabbable for drag. New items
       // get selected on tap-release. This stops the camera pan from being
       // hijacked into moving whatever happened to be under your cursor.
-      if (hit && hit === selection) dragItem = hit;
+      if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
     }
   } else if (e.button === 2) {
     mouseState = 'right';
@@ -2883,10 +2954,14 @@ window.addEventListener('mouseup', e => {
           const pt = groundPick(e);
           if (pt) placeItem(selectedKind, pt.x, pt.z);
         } else if (!selectedKind) {
-          // Tap-release selects the hit item (or deselects on miss). Works for
-          // both tapping a fresh item and re-tapping the already-selected one.
           const hit = pickPlaced(e);
-          selectItem(hit || null);
+          // Shift-click: toggle multi-selection without disturbing existing
+          // selection. Plain click: replace selection (deselect on miss).
+          if (e.shiftKey && hit) {
+            toggleInSelection(hit);
+          } else {
+            selectItem(hit || null);
+          }
         }
       }
     }
@@ -2913,11 +2988,7 @@ canvas.addEventListener('mousemove', e => {
     if (dragItem && didDrag) {
       const pt = groundPick(e);
       if (pt) {
-        dragItem.mesh.position.x = snap(pt.x);
-        dragItem.mesh.position.z = snap(pt.z);
-        if (dragItem.outlineWrapper) {
-          dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
-        }
+        applyDragMove(pt.x, pt.z);
       }
     } else if (!dragItem) {
       // Camera-grab orbit (matches touch): drag right → world rotates right
@@ -3062,7 +3133,7 @@ canvas.addEventListener('touchstart', e => {
       // hijacked into moving whatever the touch happened to start on top of —
       // the worst UX bug when the yard is dense.
       const hit = pickPlaced(t);
-      if (hit && hit === selection) dragItem = hit;
+      if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
     }
     touchState = 'one';
   } else if (e.touches.length === 2) {
@@ -3102,12 +3173,9 @@ canvas.addEventListener('touchmove', e => {
     if (dragItem && didDrag) {
       // First time a real drag actually starts, promote the candidate to
       // an actual selection so the outline ring shows.
-      if (selection !== dragItem) selectItem(dragItem);
+      if (selection !== dragItem && !selectionSet.has(dragItem)) selectItem(dragItem);
       const pt = groundPick(t);
-      if (pt) {
-        dragItem.mesh.position.set(snap(pt.x), 0, snap(pt.z));
-        if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
-      }
+      if (pt) applyDragMove(pt.x, pt.z);
     } else if (!dragItem) {
       // Apple Maps-style: one-finger drag pans the map.
       applyPan(dx, dy);
@@ -3231,6 +3299,11 @@ canvas.addEventListener('touchend', e => {
         // only gets set when you tap the already-selected item.)
         const hit = pickPlaced(t);
         selectItem(hit || null);
+      } else if (!selectedKind && dur >= 500 && dur <= 1500) {
+        // Long press without drag → multi-select toggle (mobile equivalent
+        // of shift-click on desktop).
+        const hit = pickPlaced(t);
+        if (hit) toggleInSelection(hit);
       }
     }
   } else if (touchState === 'one' && didDrag && dragItem && e.touches.length === 0) {
