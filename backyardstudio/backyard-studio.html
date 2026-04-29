@@ -38,6 +38,10 @@
     --accent: #d4a574;
     --accent-hi: #e6bb83;
     --danger: #c86a5b;
+    /* iOS notch / status bar offset for absolutely-positioned UI. Falls
+       back to 0 on browsers that don't expose env(). */
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bot: env(safe-area-inset-bottom, 0px);
   }
   * {
     box-sizing: border-box; margin: 0; padding: 0;
@@ -79,7 +83,7 @@
   }
 
   #left-panel {
-    top: 20px; left: 20px;
+    top: calc(20px + var(--safe-top)); left: 20px;
     width: 248px;
     max-height: calc(100vh - 100px);
     display: flex; flex-direction: column;
@@ -175,7 +179,7 @@
   }
 
   #right-panel {
-    top: 20px; right: 20px;
+    top: calc(20px + var(--safe-top)); right: 20px;
     width: 240px;
   }
   #panel-close {
@@ -470,7 +474,7 @@
 
   #toast {
     position: absolute;
-    top: 24px; left: 50%;
+    top: calc(24px + var(--safe-top)); left: 50%;
     transform: translateX(-50%) translateY(-12px);
     background: rgba(28,33,24,0.96);
     border: 1px solid var(--accent);
@@ -490,7 +494,7 @@
 
   #sun-bar {
     position: absolute;
-    top: 16px; left: 50%;
+    top: calc(16px + var(--safe-top)); left: 50%;
     transform: translateX(-50%);
     display: flex;
     align-items: center;
@@ -500,7 +504,7 @@
   }
   #help-btn {
     position: absolute;
-    top: 16px; right: 88px;
+    top: calc(16px + var(--safe-top)); right: 88px;
     width: 36px; height: 36px;
     border-radius: 50%;
     background: rgba(28, 33, 24, 0.92);
@@ -618,7 +622,7 @@
 
   #mode-badge {
     position: absolute;
-    top: 64px; left: 50%;
+    top: calc(64px + var(--safe-top)); left: 50%;
     transform: translateX(-50%);
     background: rgba(28, 33, 24, 0.94);
     border: 1px solid var(--accent);
@@ -664,7 +668,7 @@
 
   #edit-bar {
     position: absolute;
-    top: 16px; left: 50%;
+    top: calc(16px + var(--safe-top)); left: 50%;
     transform: translateX(-50%);
     display: flex;
     align-items: center;
@@ -749,7 +753,7 @@
 
   #compass {
     position: absolute;
-    top: 18px; right: 20px;
+    top: calc(18px + var(--safe-top)); right: 20px;
     --compass-rot: 0deg;
     transform: rotate(var(--compass-rot));
     width: 50px; height: 50px;
@@ -790,7 +794,7 @@
   #mobile-toggle {
     display: none;
     position: absolute;
-    top: 16px; left: 16px;
+    top: calc(16px + var(--safe-top)); left: 16px;
     width: 46px; height: 46px;
     background: rgba(28, 33, 24, 0.94);
     backdrop-filter: blur(14px);
@@ -828,7 +832,7 @@
     #help { display: none; }
     /* On mobile the help button overlaps the sun-bar and the compass at
        top-right; tuck it next to the hamburger at top-left instead. */
-    #help-btn { top: 16px; left: 74px; right: auto; }
+    #help-btn { top: calc(16px + var(--safe-top)); left: 74px; right: auto; }
 
     #left-panel {
       width: 290px;
@@ -867,16 +871,20 @@
     #panel-close { display: flex; align-items: center; justify-content: center; }
 
     #compass {
-      top: 14px; right: 12px; left: auto;
+      top: calc(14px + var(--safe-top)); right: 12px; left: auto;
       transform: rotate(var(--compass-rot));
       width: 40px; height: 40px;
       font-size: 12px;
     }
     #sun-bar {
-      top: 64px;
+      top: calc(64px + var(--safe-top));
       padding: 6px 10px;
       gap: 6px;
     }
+    /* Mode badge sits BELOW the mobile sun-bar (both are top-center). */
+    #mode-badge { top: calc(112px + var(--safe-top)); }
+    /* Toast also pushed down so it doesn't overlap the sun-bar. */
+    #toast { top: calc(110px + var(--safe-top)); }
     .sun-time { font-size: 10px; min-width: 56px; }
     .sun-slider { width: 120px; }
     .sun-now { font-size: 9px; padding: 4px 7px; }
@@ -892,7 +900,7 @@
     }
 
     #toast {
-      top: 14px;
+      top: calc(14px + var(--safe-top));
       font-size: 9.5px;
       padding: 8px 14px;
     }
@@ -1067,7 +1075,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v55</div>
+<div id="version">v56</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
