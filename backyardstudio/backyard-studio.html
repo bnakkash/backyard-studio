@@ -1037,7 +1037,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v53</div>
+<div id="version">v54</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1237,8 +1237,8 @@ function makeGrassTexture(base, variation, density, repeat) {
 // Ground — a custom-polygon yard outline traced from the aerial photo.
 // The photo is UV-mapped onto the polygon so only the yard area shows.
 // Vertices trace the backyard fence line, starting SW and going clockwise.
-const GROUND_W = 80;
-const GROUND_D = 91;
+const GROUND_W = 120;
+const GROUND_D = 136;
 const YARD_W = GROUND_W, YARD_D = GROUND_D;
 
 // Default UV-space coords (0..1, photo space). User-edited boundary
@@ -1315,10 +1315,17 @@ yardGeom.setAttribute('uv', new T.BufferAttribute(uvs, 2));
 const yard = new T.Mesh(
   yardGeom,
   new T.MeshLambertMaterial({
+    // Saint Augustine grass palette: warmer, broader-blade look.
+    // Lighter green base, occasional yellow-green and dark-green specs.
     map: makeGrassTexture(
-      '#7b9c5b',
-      () => [80 + Math.random()*40, 130 + Math.random()*40, 70 + Math.random()*30],
-      900, 6
+      '#88a86a',
+      () => {
+        const r = Math.random();
+        if (r < 0.35) return [170 + Math.random() * 30, 195 + Math.random() * 30, 110 + Math.random() * 25];
+        if (r < 0.7)  return [100 + Math.random() * 30, 145 + Math.random() * 35,  80 + Math.random() * 25];
+        return         [70 + Math.random() * 25, 105 + Math.random() * 30, 55 + Math.random() * 20];
+      },
+      1100, 7
     ),
     polygonOffset: true,
     polygonOffsetFactor: 1,
@@ -1338,30 +1345,81 @@ scene.add(yard);
 // keep their posts since the fence terminates against the house there.
 const HOUSE_EDGE_STARTS    = new Set([9, 10, 11, 12, 13, 14, 15, 16]);
 const HOUSE_INTERIOR_VERTS = new Set([10, 11, 12, 13, 14, 15, 16]);
-const fenceGroup = new T.Group();
-const fenceMat = new T.MeshLambertMaterial({ color: 0xe8e1cc });
+const fenceGroup = new T.Group();        // always-visible fence (yard edges)
+const fenceHouseGroup = new T.Group();   // house-edge fence — visible only when house hidden
+const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xe6dcc4 });
+const fenceTopMat  = new T.MeshLambertMaterial({ color: 0xc9b994 });
+
+// Build a wood-picket fence segment from (x1,z1) → (x2,z2): two horizontal
+// stringers (top + middle) plus vertical pickets at ~6 inch spacing.
+function buildPicketSegment(x1, z1, x2, z2, parent) {
+  const dx = x2 - x1, dz = z2 - z1;
+  const len = Math.hypot(dx, dz);
+  if (len < 0.5) return;
+  const angle = Math.atan2(-dz, dx);
+  const cx = (x1 + x2) / 2, cz = (z1 + z2) / 2;
+  // Top stringer (slightly shorter than top of pickets)
+  const topRail = new T.Mesh(new T.BoxGeometry(len, 0.25, 0.12), fenceWoodMat);
+  topRail.position.set(cx, 4.6, cz);
+  topRail.rotation.y = angle;
+  topRail.castShadow = true; topRail.receiveShadow = true;
+  parent.add(topRail);
+  // Middle stringer
+  const midRail = new T.Mesh(new T.BoxGeometry(len, 0.25, 0.12), fenceWoodMat);
+  midRail.position.set(cx, 1.8, cz);
+  midRail.rotation.y = angle;
+  midRail.castShadow = true; midRail.receiveShadow = true;
+  parent.add(midRail);
+  // Pickets — placed every ~0.5 ft, slightly shorter than 6 ft
+  const PICKET_SPACING = 0.5;
+  const n = Math.max(2, Math.floor(len / PICKET_SPACING));
+  const ux = dx / len, uz = dz / len; // unit along edge
+  for (let i = 0; i < n; i++) {
+    const t = (i + 0.5) / n;
+    const px = x1 + dx * t;
+    const pz = z1 + dz * t;
+    // Picket body
+    const picket = new T.Mesh(
+      new T.BoxGeometry(0.18, 5.6, 0.4),
+      fenceWoodMat
+    );
+    picket.position.set(px, 2.8, pz);
+    picket.rotation.y = angle;
+    picket.castShadow = true; picket.receiveShadow = true;
+    parent.add(picket);
+    // Pointed cap — small pyramid on top
+    const cap = new T.Mesh(
+      new T.ConeGeometry(0.18, 0.35, 4),
+      fenceTopMat
+    );
+    cap.position.set(px, 5.78, pz);
+    cap.rotation.y = angle + Math.PI / 4;
+    parent.add(cap);
+  }
+  // Posts at ends — slightly larger
+  // (we only place at the start of each segment to avoid double-posts at corners)
+  const post = new T.Mesh(new T.BoxGeometry(0.4, 6.6, 0.4), fenceWoodMat);
+  post.position.set(x1, 3.3, z1);
+  post.rotation.y = angle;
+  post.castShadow = true; post.receiveShadow = true;
+  parent.add(post);
+  const postCap = new T.Mesh(new T.ConeGeometry(0.32, 0.5, 4), fenceTopMat);
+  postCap.position.set(x1, 6.85, z1);
+  postCap.rotation.y = angle + Math.PI / 4;
+  parent.add(postCap);
+}
+
 for (let i = 0; i < YARD_UV.length; i++) {
   const [u1, v1] = YARD_UV[i];
   const [u2, v2] = YARD_UV[(i + 1) % YARD_UV.length];
   const [x1, z1] = uvToWorld(u1, v1);
   const [x2, z2] = uvToWorld(u2, v2);
-  const dx = x2 - x1, dz = z2 - z1;
-  const len = Math.hypot(dx, dz);
-  if (!HOUSE_EDGE_STARTS.has(i)) {
-    const rail = new T.Mesh(new T.BoxGeometry(len, 6, 0.2), fenceMat);
-    rail.position.set((x1 + x2) / 2, 3, (z1 + z2) / 2);
-    rail.rotation.y = Math.atan2(-dz, dx);
-    rail.castShadow = true; rail.receiveShadow = true;
-    fenceGroup.add(rail);
-  }
-  if (!HOUSE_INTERIOR_VERTS.has(i)) {
-    const post = new T.Mesh(new T.BoxGeometry(0.3, 6.4, 0.3), fenceMat);
-    post.position.set(x1, 3.2, z1);
-    post.castShadow = true;
-    fenceGroup.add(post);
-  }
+  const target = HOUSE_EDGE_STARTS.has(i) ? fenceHouseGroup : fenceGroup;
+  buildPicketSegment(x1, z1, x2, z2, target);
 }
 scene.add(fenceGroup);
+scene.add(fenceHouseGroup);
+fenceHouseGroup.visible = true; // house hidden by default → these are visible
 
 // Backdrop house — built into the south perimeter. The back wall traces
 // polygon vertices 9 → 10 → 11 → ... → 16 → 0 (matching the yard alcove
@@ -1470,8 +1528,8 @@ const outerGrass = new T.Mesh(
   new T.PlaneGeometry(360, 360, 1, 1),
   new T.MeshLambertMaterial({
     map: makeGrassTexture(
-      '#5d7a48',
-      () => [60 + Math.random()*30, 100 + Math.random()*30, 50 + Math.random()*20],
+      '#6a8552',
+      () => [70 + Math.random()*30, 115 + Math.random()*30, 60 + Math.random()*20],
       1200, 30
     )
   })
@@ -2110,31 +2168,34 @@ const PLACEABLES = {
     }
   },
   rock_bed: {
-    name: 'Rock Bed', category: 'Hardscape', icon: '🪨', footprint: '6 × 3 ft',
+    name: '1.5" Cream Rock Bed', category: 'Hardscape', icon: '🪨',
+    footprint: '6 × 3 ft · cream pebbles',
     build: () => {
       const g = new T.Group();
-      // Gravel base
+      // Cream base
       const base = new T.Mesh(
         new T.BoxGeometry(6, 0.06, 3),
-        new T.MeshLambertMaterial({ color: 0x9a907a })
+        new T.MeshLambertMaterial({ color: 0xdfd2b4 })
       );
       base.position.y = 0.03; base.receiveShadow = true;
       g.add(base);
-      const rockColors = [0x6e6a60, 0x8a8478, 0x55524a, 0xa39c8c];
-      for (let i = 0; i < 32; i++) {
-        const s = 0.12 + Math.random() * 0.25;
+      // Small (~1.5") cream-tone pebbles, dense scatter
+      const rockColors = [0xe8dcc4, 0xd6c8a8, 0xefe4ce, 0xc8b896, 0xe0d3b6];
+      const PEBBLE_COUNT = 110;
+      for (let i = 0; i < PEBBLE_COUNT; i++) {
+        const s = 0.06 + Math.random() * 0.04; // ~0.7"–1.2" radius → ~1.5"–2.4" across
         const c = rockColors[Math.floor(Math.random() * rockColors.length)];
         const r = new T.Mesh(
           new T.IcosahedronGeometry(s, 0),
           new T.MeshLambertMaterial({ color: c, flatShading: true })
         );
         r.position.set(
-          (Math.random() - 0.5) * 5.6,
-          s * 0.55,
-          (Math.random() - 0.5) * 2.6
+          (Math.random() - 0.5) * 5.7,
+          0.06 + s * 0.4,
+          (Math.random() - 0.5) * 2.7
         );
         r.rotation.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
-        r.scale.y = 0.6 + Math.random() * 0.3;
+        r.scale.y = 0.55 + Math.random() * 0.3;
         r.castShadow = true; r.receiveShadow = true;
         g.add(r);
       }
@@ -2164,21 +2225,34 @@ const PLACEABLES = {
     }
   },
   paver_trim: {
-    name: 'Paver Trim', category: 'Hardscape', icon: '▭',
-    footprint: '6 ft segment · path-eligible',
+    name: 'Trapezoidal Paver Trim', category: 'Hardscape', icon: '▭',
+    footprint: '6 ft trapezoidal trim · path-eligible',
     pathStep: 6,
     build: () => {
+      // Each block is a trapezoid in plan: wider on the +Z (outer) edge,
+      // narrower on the -Z (inner) edge so the row of blocks fits naturally
+      // along curved paths. Long axis runs along X (matches path placement).
       const g = new T.Group();
-      const len = 6, blockW = 0.6;
-      const numBlocks = Math.floor(len / blockW);
-      const palette = [0xb8a88a, 0xa89880, 0xc8b896];
+      const len = 6, blockL = 0.6;
+      const numBlocks = Math.floor(len / blockL);
+      const palette = [0xc4b395, 0xb29a78, 0xd6c4a4, 0xa89476];
       for (let i = 0; i < numBlocks; i++) {
-        const c = palette[i % palette.length];
+        const shape = new T.Shape();
+        const halfL  = (blockL - 0.04) / 2;
+        const wOuter = 0.32;  // outer half-width
+        const wInner = 0.20;  // inner half-width
+        shape.moveTo(-halfL, -wInner);
+        shape.lineTo( halfL, -wInner);
+        shape.lineTo( halfL,  wOuter);
+        shape.lineTo(-halfL,  wOuter);
+        shape.closePath();
+        const geom = new T.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
+        geom.rotateX(-Math.PI / 2); // extrude becomes vertical; shape-y → world-Z
         const b = new T.Mesh(
-          new T.BoxGeometry(blockW - 0.04, 0.12, 0.5),
-          new T.MeshLambertMaterial({ color: c })
+          geom,
+          new T.MeshLambertMaterial({ color: palette[i % palette.length] })
         );
-        b.position.set(-len / 2 + blockW * (i + 0.5), 0.06, 0);
+        b.position.set(-len / 2 + blockL * (i + 0.5), 0, 0);
         b.receiveShadow = true; b.castShadow = true;
         g.add(b);
       }
@@ -2260,6 +2334,177 @@ const PLACEABLES = {
       chimney.castShadow = true;
       g.add(chimney);
 
+      return g;
+    }
+  },
+  viburnum: {
+    name: 'Viburnum', category: 'Plants', icon: '🌱',
+    footprint: 'Dense FL hedge · 5–6 ft',
+    build: () => {
+      const g = new T.Group();
+      const folMat = new T.MeshLambertMaterial({ color: 0x355d2e, flatShading: true });
+      const flowerMat = new T.MeshLambertMaterial({ color: 0xefe9d6 });
+      // Multi-clump dense shrub, taller than ornamental
+      for (let i = 0; i < 5; i++) {
+        const r = 0.7 + Math.random() * 0.4;
+        const b = new T.Mesh(new T.IcosahedronGeometry(r, 1), folMat);
+        b.position.set(
+          (Math.random() - 0.5) * 1.4,
+          r * 0.85 + 0.2,
+          (Math.random() - 0.5) * 1.4
+        );
+        b.castShadow = true; b.receiveShadow = true;
+        g.add(b);
+      }
+      // Subtle white flower clusters scattered on top
+      for (let i = 0; i < 8; i++) {
+        const f = new T.Mesh(new T.SphereGeometry(0.09, 6, 5), flowerMat);
+        f.position.set(
+          (Math.random() - 0.5) * 1.4,
+          1.6 + Math.random() * 0.4,
+          (Math.random() - 0.5) * 1.4
+        );
+        g.add(f);
+      }
+      return g;
+    }
+  },
+  bougainvillea: {
+    name: 'Bougainvillea', category: 'Plants', icon: '🌺',
+    footprint: 'Magenta accent · 6–8 ft',
+    build: () => {
+      const g = new T.Group();
+      const woodMat = new T.MeshLambertMaterial({ color: 0x5a4028 });
+      const folMat = new T.MeshLambertMaterial({ color: 0x4a7240, flatShading: true });
+      const bractMat = new T.MeshLambertMaterial({ color: 0xc44a82 });
+      // Short woody trunk
+      const trunk = new T.Mesh(
+        new T.CylinderGeometry(0.18, 0.28, 1.6, 6),
+        woodMat
+      );
+      trunk.position.y = 0.8; trunk.castShadow = true; g.add(trunk);
+      // Spreading sprawl of foliage spheres
+      for (let i = 0; i < 7; i++) {
+        const r = 1.0 + Math.random() * 0.5;
+        const fol = new T.Mesh(new T.IcosahedronGeometry(r, 1), folMat);
+        const a = (i / 7) * Math.PI * 2 + Math.random() * 0.4;
+        const dist = 0.5 + Math.random() * 1.2;
+        fol.position.set(
+          Math.cos(a) * dist,
+          1.6 + Math.random() * 1.5,
+          Math.sin(a) * dist
+        );
+        fol.castShadow = true; fol.receiveShadow = true;
+        g.add(fol);
+      }
+      // Showy magenta bract clusters scattered through the foliage
+      for (let i = 0; i < 32; i++) {
+        const a = Math.random() * Math.PI * 2;
+        const dist = 0.6 + Math.random() * 1.4;
+        const bract = new T.Mesh(new T.IcosahedronGeometry(0.15 + Math.random() * 0.1, 0), bractMat);
+        bract.position.set(
+          Math.cos(a) * dist,
+          1.4 + Math.random() * 2,
+          Math.sin(a) * dist
+        );
+        g.add(bract);
+      }
+      return g;
+    }
+  },
+  planter_medium: {
+    name: 'Medium Planter', category: 'Plants', icon: '🪴',
+    footprint: '~16" round',
+    build: () => {
+      const g = new T.Group();
+      const pot = new T.Mesh(
+        new T.CylinderGeometry(0.55, 0.4, 0.85, 14),
+        new T.MeshLambertMaterial({ color: 0xa0846a })
+      );
+      pot.position.y = 0.43; pot.castShadow = true; pot.receiveShadow = true;
+      g.add(pot);
+      const plant = new T.Mesh(
+        new T.IcosahedronGeometry(0.55, 1),
+        new T.MeshLambertMaterial({ color: 0x5c8540, flatShading: true })
+      );
+      plant.position.y = 1.15; plant.castShadow = true;
+      g.add(plant);
+      return g;
+    }
+  },
+  planter_rect: {
+    name: 'Rectangular Planter', category: 'Plants', icon: '▭',
+    footprint: '3 × 1 ft trough',
+    build: () => {
+      const g = new T.Group();
+      const box = new T.Mesh(
+        new T.BoxGeometry(3, 0.95, 1),
+        new T.MeshLambertMaterial({ color: 0x968067 })
+      );
+      box.position.y = 0.475; box.castShadow = true; box.receiveShadow = true;
+      g.add(box);
+      // Dark soil rim
+      const soil = new T.Mesh(
+        new T.BoxGeometry(2.85, 0.06, 0.9),
+        new T.MeshLambertMaterial({ color: 0x1f1610 })
+      );
+      soil.position.y = 0.95;
+      g.add(soil);
+      // Three plant clumps along the length
+      const folMat = new T.MeshLambertMaterial({ color: 0x4a7a3a, flatShading: true });
+      for (let i = 0; i < 3; i++) {
+        const fol = new T.Mesh(new T.IcosahedronGeometry(0.42, 1), folMat);
+        fol.position.set(-1 + i * 1.0, 1.35, 0);
+        fol.castShadow = true;
+        g.add(fol);
+      }
+      return g;
+    }
+  },
+  shed: {
+    name: 'Shed', category: 'Features', icon: '🏚️',
+    footprint: '8 × 6 × 7 ft, gabled',
+    build: () => {
+      const g = new T.Group();
+      const wallMat = new T.MeshLambertMaterial({ color: 0x8a6e4d });
+      const roofMat = new T.MeshLambertMaterial({ color: 0x4a3530 });
+      const trimMat = new T.MeshLambertMaterial({ color: 0xe6dcc4 });
+      const doorMat = new T.MeshLambertMaterial({ color: 0x3a2a1c });
+      const W = 8, D = 6, H = 6, roofH = 1.6;
+      // Walls
+      const walls = new T.Mesh(new T.BoxGeometry(W, H, D), wallMat);
+      walls.position.y = H / 2;
+      walls.castShadow = true; walls.receiveShadow = true;
+      g.add(walls);
+      // Two pitched roof panels meeting at a ridge along the long axis
+      const roofSlope = Math.atan2(roofH, D / 2);
+      const panelLen = Math.hypot(D / 2, roofH);
+      [1, -1].forEach(sign => {
+        const p = new T.Mesh(new T.BoxGeometry(W + 0.4, 0.18, panelLen + 0.3), roofMat);
+        p.position.set(0, H + roofH / 2, sign * D / 4);
+        p.rotation.x = -sign * roofSlope;
+        p.castShadow = true; p.receiveShadow = true;
+        g.add(p);
+      });
+      // Triangular gable closures
+      const gable = new T.Shape();
+      gable.moveTo(-W / 2, 0);
+      gable.lineTo( W / 2, 0);
+      gable.lineTo(0, roofH);
+      gable.closePath();
+      const gableGeom = new T.ShapeGeometry(gable);
+      const gF = new T.Mesh(gableGeom, wallMat);
+      gF.position.set(0, H, D / 2 + 0.01); g.add(gF);
+      const gB = new T.Mesh(gableGeom, wallMat);
+      gB.position.set(0, H, -D / 2 - 0.01); gB.rotation.y = Math.PI; g.add(gB);
+      // Door on the front face
+      const door = new T.Mesh(new T.BoxGeometry(1.6, 4.6, 0.1), doorMat);
+      door.position.set(0, 2.3, D / 2 + 0.06);
+      g.add(door);
+      // Trim around the door
+      const trim = new T.Mesh(new T.BoxGeometry(1.85, 4.85, 0.05), trimMat);
+      trim.position.set(0, 2.4, D / 2 + 0.045);
+      g.add(trim);
       return g;
     }
   }
@@ -3004,12 +3249,17 @@ document.getElementById('plan-btn').addEventListener('click', exportPlanPNG);
 // yard layout without the house silhouette dominating the top-down view.
 const _houseParts = [houseWalls, houseRoof, houseChimney, winE, winW].filter(Boolean);
 const houseToggleBtn = document.getElementById('house-toggle');
-let _houseVisible = true;
+let _houseVisible = false; // default hidden — fence wraps perimeter
+function _applyHouseVisibility() {
+  _houseParts.forEach(p => { p.visible = _houseVisible; });
+  fenceHouseGroup.visible = !_houseVisible;
+  houseToggleBtn.textContent = _houseVisible ? 'Hide House' : 'Show House';
+}
 houseToggleBtn.addEventListener('click', () => {
   _houseVisible = !_houseVisible;
-  _houseParts.forEach(p => { p.visible = _houseVisible; });
-  houseToggleBtn.textContent = _houseVisible ? 'Hide House' : 'Show House';
+  _applyHouseVisibility();
 });
+_applyHouseVisibility();
 document.getElementById('share-btn').addEventListener('click', shareLayout);
 
 // Initialize snap-btn from persisted state, then bind toggle
