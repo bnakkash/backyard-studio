@@ -498,6 +498,155 @@
     padding: 7px 12px;
     z-index: 10;
   }
+  #help-btn {
+    position: absolute;
+    top: 16px; right: 88px;
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(28, 33, 24, 0.92);
+    border: 1px solid var(--border);
+    color: var(--accent);
+    font-family: 'Fraunces', serif;
+    font-size: 18px;
+    font-weight: 500;
+    cursor: pointer;
+    z-index: 12;
+    display: flex; align-items: center; justify-content: center;
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    transition: filter 0.15s, border-color 0.15s;
+    padding: 0;
+  }
+  #help-btn:hover { border-color: var(--accent); }
+  #help-btn:active { filter: brightness(0.85); }
+  #help-overlay {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 8, 4, 0.7);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    z-index: 50;
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+    overflow-y: auto;
+  }
+  #help-overlay[hidden] { display: none; }
+  .help-card {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    max-width: 460px;
+    width: 100%;
+    max-height: calc(100vh - 48px);
+    display: flex; flex-direction: column;
+    box-shadow: 0 24px 56px rgba(0,0,0,0.55);
+  }
+  .help-head {
+    padding: 18px 20px 14px;
+    border-bottom: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .help-head h2 {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 500;
+    letter-spacing: -0.01em;
+  }
+  .help-close {
+    background: var(--panel-hi);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    width: 28px; height: 28px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex; align-items: center; justify-content: center;
+    padding: 0;
+  }
+  .help-close:hover { color: var(--text); border-color: var(--accent); }
+  .help-body {
+    padding: 14px 20px 20px;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .help-body h3 {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin: 16px 0 8px;
+    font-weight: 500;
+  }
+  .help-body h3:first-child { margin-top: 0; }
+  .help-body ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+  }
+  .help-body ul li {
+    font-size: 13px;
+    color: var(--text-dim);
+    line-height: 1.7;
+    padding: 2px 0;
+  }
+  .help-body ul li b { color: var(--text); font-weight: 500; }
+  .help-body kbd {
+    background: var(--panel-hi);
+    border: 1px solid var(--border);
+    padding: 1px 6px;
+    border-radius: 2px;
+    color: var(--text);
+    font-size: 10.5px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+
+  #mode-badge {
+    position: absolute;
+    top: 64px; left: 50%;
+    transform: translateX(-50%);
+    background: rgba(28, 33, 24, 0.94);
+    border: 1px solid var(--accent);
+    border-radius: 100px;
+    padding: 6px 6px 6px 14px;
+    display: flex; align-items: center;
+    gap: 8px;
+    font-family: 'Manrope', sans-serif;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--text);
+    z-index: 12;
+    box-shadow: 0 6px 16px rgba(0,0,0,0.35);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    max-width: calc(100vw - 32px);
+    white-space: nowrap;
+  }
+  #mode-badge[hidden] { display: none; }
+  #mode-badge .badge-icon { font-size: 14px; line-height: 1; }
+  #mode-badge .badge-label {
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  #mode-badge .badge-close {
+    background: var(--panel-hi);
+    border: none;
+    color: var(--text-dim);
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    cursor: pointer;
+    font-size: 12px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    transition: all 0.12s;
+    padding: 0;
+    flex: 0 0 auto;
+  }
+  #mode-badge .badge-close:hover {
+    background: var(--danger);
+    color: var(--text);
+  }
+
   #edit-bar {
     position: absolute;
     top: 16px; left: 50%;
@@ -743,6 +892,45 @@
 </button>
 <div id="mobile-backdrop"></div>
 
+<button id="help-btn" type="button" aria-label="Help">?</button>
+<div id="help-overlay" hidden>
+  <div class="help-card">
+    <div class="help-head">
+      <h2>Backyard Studio</h2>
+      <button class="help-close" id="help-close" aria-label="Close">✕</button>
+    </div>
+    <div class="help-body">
+      <h3>Gestures</h3>
+      <ul>
+        <li><b>One finger drag</b> — pan the camera</li>
+        <li><b>Pinch</b> — zoom</li>
+        <li><b>Two fingers twist</b> — rotate around fingertip</li>
+        <li><b>Two fingers up / down</b> — tilt camera</li>
+        <li><b>Double-tap</b> — zoom in toward tap point</li>
+      </ul>
+      <h3>Items</h3>
+      <ul>
+        <li><b>Tap palette</b> → tap yard to place</li>
+        <li><b>Tap an item</b> to select · drag selected to move</li>
+        <li><b>Two-finger pinch / twist on selected</b> — scale / rotate it</li>
+        <li><b>Long-press</b> (mobile) or <b>shift-click</b> (desktop) — multi-select</li>
+        <li><b>Path items</b> (Paver Trim, Stepping Stones) — tap waypoints, segments fill in</li>
+      </ul>
+      <h3>Yard boundary</h3>
+      <ul>
+        <li><b>Trace photo</b> — upload an aerial, click corners</li>
+        <li><b>Walk</b> — phone-based perimeter walk</li>
+        <li><b>Edit</b> — drag existing corners</li>
+      </ul>
+      <h3>Keyboard (desktop)</h3>
+      <ul>
+        <li><kbd>⌘Z</kbd> undo · <kbd>⌘⇧Z</kbd> redo · <kbd>⌘D</kbd> duplicate</li>
+        <li><kbd>g</kbd> toggle snap · <kbd>Esc</kbd> deselect · <kbd>Del</kbd> remove</li>
+      </ul>
+    </div>
+  </div>
+</div>
+
 <button id="compass" type="button" aria-label="Face north">
   <div class="ring"></div>
   <span class="n">N</span>
@@ -753,6 +941,12 @@
   <button class="cam-btn" id="edit-reset">Reset</button>
   <button class="cam-btn" id="edit-cancel">Cancel</button>
   <button class="cam-btn primary" id="edit-save">Save</button>
+</div>
+
+<div id="mode-badge" hidden>
+  <span class="badge-icon" id="mode-icon">🌳</span>
+  <span class="badge-label" id="mode-label">Placing</span>
+  <button class="badge-close" id="mode-close" aria-label="Exit mode">✕</button>
 </div>
 
 <div id="sun-bar" class="panel">
@@ -843,7 +1037,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v52</div>
+<div id="version">v53</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2114,12 +2308,11 @@ catOrder.forEach(cat => {
         if (PLACEABLES[key].pathStep) {
           pathMode = true;
           pathWaypoints = [];
-          toast(`Tap waypoints · ${item.name} · re-tap palette to finish`);
         } else {
           resetPath();
-          toast(`Tap yard to place · ${item.name}`);
         }
       }
+      refreshModeBadge();
     });
     paletteEl.appendChild(el);
   });
@@ -2130,7 +2323,55 @@ function clearPaletteSelection() {
   selectedKindEl = null;
   selectedKind = null;
   canvas.classList.remove('placing');
+  if (typeof resetPath === 'function') resetPath();
+  refreshModeBadge();
 }
+
+// ============================================================
+// Mode badge — persistent indicator + ✕ close. Reflects whichever
+// modal-ish state is currently active so the user always knows where
+// they are. Replaces ephemeral toasts that disappear in 1.9s.
+// ============================================================
+function refreshModeBadge() {
+  const el = document.getElementById('mode-badge');
+  if (!el) return;
+  const iconEl = document.getElementById('mode-icon');
+  const labelEl = document.getElementById('mode-label');
+  let icon = null, label = null;
+  // Priority: edit boundary > path > placement > multi-select
+  if (typeof yardEditMode !== 'undefined' && yardEditMode) {
+    icon = '📐'; label = 'Edit boundary';
+  } else if (typeof pathMode !== 'undefined' && pathMode && selectedKind) {
+    const def = PLACEABLES[selectedKind];
+    const n = (typeof pathWaypoints !== 'undefined') ? pathWaypoints.length : 0;
+    icon = def.icon; label = `Path · ${def.name} · ${n} waypoint${n === 1 ? '' : 's'}`;
+  } else if (selectedKind) {
+    const def = PLACEABLES[selectedKind];
+    icon = def.icon; label = `Tap yard to place · ${def.name}`;
+  } else if (selectionSet && selectionSet.size > 1) {
+    icon = '🎯'; label = `${selectionSet.size} items selected`;
+  }
+  if (icon == null) {
+    el.hidden = true;
+    return;
+  }
+  iconEl.textContent = icon;
+  labelEl.textContent = label;
+  el.hidden = false;
+}
+
+document.getElementById('mode-close').addEventListener('click', () => {
+  if (typeof yardEditMode !== 'undefined' && yardEditMode) {
+    exitYardEdit(true);
+    return;
+  }
+  if (selectedKind) {
+    clearPaletteSelection();
+  } else if (selectionSet && selectionSet.size > 1) {
+    selectItem(null);
+  }
+  refreshModeBadge();
+});
 
 // ============================================================
 // Placed items state
@@ -2159,6 +2400,7 @@ function selectItem(item) {
     document.getElementById('selection-controls').style.display = 'none';
     setSelectionSheetVisible(false);
   }
+  if (typeof refreshModeBadge === 'function') refreshModeBadge();
 }
 
 // Multi-select: toggle membership in selectionSet, leaving the rest intact.
@@ -2219,6 +2461,7 @@ function toggleInSelection(item) {
       `<div class="sel-cat">multi-selection · drag to move all · delete removes all</div>`;
   }
   if (typeof haptic === 'function') haptic(6);
+  if (typeof refreshModeBadge === 'function') refreshModeBadge();
 }
 
 function setOutline(item, on) {
@@ -2375,6 +2618,7 @@ function pathPlace(kind, x, z) {
   const sx = snap(x), sz = snap(z);
   pathWaypoints.push({ x: sx, z: sz });
   haptic(8);
+  refreshModeBadge();
   if (pathWaypoints.length < 2) {
     toast('Tap next waypoint…');
     return;
@@ -3436,6 +3680,7 @@ window.addEventListener('keydown', e => {
   if (document.activeElement && document.activeElement.tagName === 'INPUT') return;
   const mod = e.metaKey || e.ctrlKey;
   if (e.key === 'Escape') {
+    if (!helpOverlay.hidden) { closeHelp(); return; }
     selectItem(null);
     clearPaletteSelection();
   } else if (e.key === 'Delete' || e.key === 'Backspace') {
@@ -3521,6 +3766,17 @@ function faceNorth() {
 }
 
 compassEl.addEventListener('click', faceNorth);
+
+// Help overlay — central reference for gestures, modes, shortcuts.
+// Replaces the desktop-only #help footer for mobile users.
+const helpOverlay = document.getElementById('help-overlay');
+function openHelp() { helpOverlay.hidden = false; }
+function closeHelp() { helpOverlay.hidden = true; }
+document.getElementById('help-btn').addEventListener('click', openHelp);
+document.getElementById('help-close').addEventListener('click', closeHelp);
+helpOverlay.addEventListener('click', (e) => {
+  if (e.target === helpOverlay) closeHelp();
+});
 // iOS Safari sometimes drops click on home-screen PWAs; bind touch as backup
 compassEl.addEventListener('touchend', (e) => {
   e.preventDefault();
@@ -3566,6 +3822,7 @@ function enterYardEdit() {
     return h;
   });
   toast('Drag corners to reshape · Save when done');
+  refreshModeBadge();
 }
 
 function exitYardEdit(reload) {
