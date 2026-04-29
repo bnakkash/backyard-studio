@@ -591,6 +591,21 @@
     padding: 2px 0;
   }
   .help-body ul li b { color: var(--text); font-weight: 500; }
+  .help-body .setting-row {
+    display: flex; align-items: center;
+    gap: 10px;
+    padding: 8px 0;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--text);
+  }
+  .help-body .setting-row input[type="checkbox"] {
+    width: 16px; height: 16px;
+    accent-color: var(--accent);
+    cursor: pointer;
+  }
+  .help-body .setting-row span { color: var(--text-dim); }
+  .help-body .setting-row:hover span { color: var(--text); }
   .help-body kbd {
     background: var(--panel-hi);
     border: 1px solid var(--border);
@@ -669,7 +684,9 @@
   #edit-bar .cam-btn.primary {
     color: #1a1a1a; background: var(--accent);
   }
-  body.edit-yard #sun-bar { display: none; }
+  body.edit-yard #sun-bar,
+  body.edit-yard #help-btn,
+  body.edit-yard #mode-badge { display: none !important; }
   body.edit-yard #left-panel,
   body.edit-yard #right-panel,
   body.edit-yard #bottom-bar,
@@ -809,6 +826,9 @@
   @media (max-width: 780px) {
     #mobile-toggle { display: flex; }
     #help { display: none; }
+    /* On mobile the help button overlaps the sun-bar and the compass at
+       top-right; tuck it next to the hamburger at top-left instead. */
+    #help-btn { top: 16px; left: 74px; right: auto; }
 
     #left-panel {
       width: 290px;
@@ -926,7 +946,17 @@
       <ul>
         <li><kbd>⌘Z</kbd> undo · <kbd>⌘⇧Z</kbd> redo · <kbd>⌘D</kbd> duplicate</li>
         <li><kbd>g</kbd> toggle snap · <kbd>Esc</kbd> deselect · <kbd>Del</kbd> remove</li>
+        <li><b>Middle-mouse drag</b> on a selected item — rotate it</li>
       </ul>
+      <h3>Settings</h3>
+      <label class="setting-row">
+        <input type="checkbox" id="setting-invert-mouse">
+        <span>Invert mouse drag direction</span>
+      </label>
+      <label class="setting-row">
+        <input type="checkbox" id="setting-invert-mouse-y">
+        <span>Invert mouse drag — vertical only</span>
+      </label>
     </div>
   </div>
 </div>
@@ -1037,7 +1067,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v54</div>
+<div id="version">v55</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1347,8 +1377,8 @@ const HOUSE_EDGE_STARTS    = new Set([9, 10, 11, 12, 13, 14, 15, 16]);
 const HOUSE_INTERIOR_VERTS = new Set([10, 11, 12, 13, 14, 15, 16]);
 const fenceGroup = new T.Group();        // always-visible fence (yard edges)
 const fenceHouseGroup = new T.Group();   // house-edge fence — visible only when house hidden
-const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xe6dcc4 });
-const fenceTopMat  = new T.MeshLambertMaterial({ color: 0xc9b994 });
+const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xf2ede0 });
+const fenceTopMat  = new T.MeshLambertMaterial({ color: 0xe6dfce });
 
 // Build a wood-picket fence segment from (x1,z1) → (x2,z2): two horizontal
 // stringers (top + middle) plus vertical pickets at ~6 inch spacing.
@@ -2057,7 +2087,7 @@ const PLACEABLES = {
       const outer = new T.Group();
       const g = new T.Group();
       outer.add(g);
-      outer.scale.setScalar(2);
+      outer.scale.setScalar(5);
       const woodMat = new T.MeshLambertMaterial({ color: 0x5a4028 });
       const leafMat = new T.MeshLambertMaterial({ color: 0x355d2e, flatShading: true });
       const orangeMat = new T.MeshLambertMaterial({ color: 0xe08a2e });
@@ -2857,7 +2887,18 @@ function placeItem(kind, x, z) {
 // ============================================================
 let pathMode = false;
 let pathWaypoints = []; // [{x, z}] in world coords
-function resetPath() { pathMode = false; pathWaypoints = []; }
+let pathSpawnedItems = []; // items added during current path session — re-spawned on each new waypoint so 3+ points smooth into a curve
+function resetPath() { pathMode = false; pathWaypoints = []; pathSpawnedItems = []; }
+
+function _removePathSessionItems() {
+  for (const it of pathSpawnedItems) {
+    scene.remove(it.mesh);
+    disposeTree(it.mesh);
+    const idx = placed.indexOf(it);
+    if (idx >= 0) placed.splice(idx, 1);
+  }
+  pathSpawnedItems = [];
+}
 
 function pathPlace(kind, x, z) {
   const sx = snap(x), sz = snap(z);
@@ -2868,26 +2909,29 @@ function pathPlace(kind, x, z) {
     toast('Tap next waypoint…');
     return;
   }
-  const a = pathWaypoints[pathWaypoints.length - 2];
-  const b = pathWaypoints[pathWaypoints.length - 1];
+  // Re-spawn the entire path session so 3+ waypoints curve smoothly through.
+  // Catmull-Rom spline through every waypoint; 2 waypoints = straight line.
+  _removePathSessionItems();
   const def = PLACEABLES[kind];
-  const dx = b.x - a.x, dz = b.z - a.z;
-  const len = Math.hypot(dx, dz);
-  if (len < 0.5) return;
-  const angle = Math.atan2(-dz, dx);
-  const step = def.pathStep;
-  const count = Math.max(1, Math.round(len / step));
   const builder = def.pathBuild || def.build;
+  const points = pathWaypoints.map(p => new T.Vector3(p.x, 0, p.z));
+  const curve = new T.CatmullRomCurve3(points, false, 'catmullrom', 0.5);
+  const totalLen = curve.getLength();
+  if (totalLen < 0.5) { pushHistory(); return; }
+  const count = Math.max(1, Math.round(totalLen / def.pathStep));
   for (let i = 0; i < count; i++) {
     const t = (i + 0.5) / count;
-    const px = a.x + dx * t;
-    const pz = a.z + dz * t;
+    const pt = curve.getPointAt(t);
+    const tan = curve.getTangentAt(t);
+    const angle = Math.atan2(-tan.z, tan.x);
     const mesh = builder();
-    mesh.position.set(px, 0, pz);
+    mesh.position.set(pt.x, 0, pt.z);
     mesh.rotation.y = angle;
     mesh.add(makeContactShadow(mesh));
     scene.add(mesh);
-    placed.push({ kind, mesh });
+    const item = { kind, mesh };
+    placed.push(item);
+    pathSpawnedItems.push(item);
   }
   pushHistory();
 }
@@ -3439,6 +3483,13 @@ canvas.addEventListener('mousedown', e => {
       // hijacked into moving whatever happened to be under your cursor.
       if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
     }
+  } else if (e.button === 1) {
+    // Middle-click drag on a selected item rotates it. Browsers default
+    // middle-mouse to autoscroll on this canvas; preventDefault below.
+    if (selection) {
+      mouseState = 'middle';
+      e.preventDefault();
+    }
   } else if (e.button === 2) {
     mouseState = 'right';
     canvas.classList.add('panning');
@@ -3482,6 +3533,9 @@ window.addEventListener('mouseup', e => {
   } else if (mouseState === 'left' && dragItem) {
     // Item was dragged to a new position — record it
     pushHistory();
+  } else if (mouseState === 'middle' && selection) {
+    // Middle-mouse rotation finished — commit
+    pushHistory();
   }
   mouseState = null;
   dragItem = null;
@@ -3505,11 +3559,20 @@ canvas.addEventListener('mousemove', e => {
         applyDragMove(pt.x, pt.z);
       }
     } else if (!dragItem) {
-      // Camera-grab orbit (matches touch): drag right → world rotates right
-      cam.theta -= dx * 0.0075;
-      cam.phi += dy * 0.0075;
+      // Camera-grab orbit (matches touch): drag right → world rotates right.
+      // Settings let the user invert one or both axes if it feels backwards.
+      const sx = (settings.invertMouse ? +1 : -1);
+      const sy = ((settings.invertMouse !== settings.invertMouseY) ? -1 : +1);
+      cam.theta += sx * dx * 0.0075;
+      cam.phi   += sy * dy * 0.0075;
       cam.phi = Math.max(0.06, Math.min(Math.PI * 0.49, cam.phi));
       updateCam();
+    }
+  } else if (mouseState === 'middle') {
+    if (selection) {
+      // Horizontal middle-mouse drag rotates the selection. ~360° per
+      // full window-width drag at 1024px wide.
+      applyRotationToSelection(selection.mesh.rotation.y + dx * 0.0061);
     }
   } else if (mouseState === 'right') {
     const speed = cam.radius * 0.0018;
@@ -4017,15 +4080,47 @@ function faceNorth() {
 
 compassEl.addEventListener('click', faceNorth);
 
+// Settings — persisted preferences for desktop input feel.
+const settings = (() => {
+  let s = { invertMouse: false, invertMouseY: false };
+  try {
+    const raw = localStorage.getItem('backyard_settings');
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === 'object') s = Object.assign(s, parsed);
+    }
+  } catch (_) {}
+  return s;
+})();
+function saveSettings() {
+  try { localStorage.setItem('backyard_settings', JSON.stringify(settings)); }
+  catch (_) {}
+}
+
 // Help overlay — central reference for gestures, modes, shortcuts.
 // Replaces the desktop-only #help footer for mobile users.
 const helpOverlay = document.getElementById('help-overlay');
-function openHelp() { helpOverlay.hidden = false; }
+function openHelp() {
+  // Sync checkboxes with current settings every time the panel opens
+  const a = document.getElementById('setting-invert-mouse');
+  const b = document.getElementById('setting-invert-mouse-y');
+  if (a) a.checked = !!settings.invertMouse;
+  if (b) b.checked = !!settings.invertMouseY;
+  helpOverlay.hidden = false;
+}
 function closeHelp() { helpOverlay.hidden = true; }
 document.getElementById('help-btn').addEventListener('click', openHelp);
 document.getElementById('help-close').addEventListener('click', closeHelp);
 helpOverlay.addEventListener('click', (e) => {
   if (e.target === helpOverlay) closeHelp();
+});
+document.getElementById('setting-invert-mouse').addEventListener('change', (e) => {
+  settings.invertMouse = e.target.checked;
+  saveSettings();
+});
+document.getElementById('setting-invert-mouse-y').addEventListener('change', (e) => {
+  settings.invertMouseY = e.target.checked;
+  saveSettings();
 });
 // iOS Safari sometimes drops click on home-screen PWAs; bind touch as backup
 compassEl.addEventListener('touchend', (e) => {
