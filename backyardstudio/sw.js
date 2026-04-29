@@ -1,6 +1,6 @@
 // Backyard Studio service worker — offline support.
 // Bump CACHE when you ship a new HTML build so clients refresh.
-const CACHE = 'backyard-studio-v58';
+const CACHE = 'backyard-studio-v59';
 
 const PRECACHE = [
   './',
@@ -26,6 +26,11 @@ self.addEventListener('install', (event) => {
     }));
     self.skipWaiting();
   })());
+});
+
+// Allow the page to ask a waiting SW to activate immediately.
+self.addEventListener('message', (event) => {
+  if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {

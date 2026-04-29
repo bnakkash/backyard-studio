@@ -1101,7 +1101,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v58</div>
+<div id="version">v59</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -4520,7 +4520,36 @@ setTimeout(() => toast('Tap an item to select it · drag the selected item to mo
 if ('serviceWorker' in navigator && location.protocol !== 'file:') {
   window.addEventListener('load', async () => {
     try {
-      const reg = await navigator.serviceWorker.register('sw.js');
+      // updateViaCache: 'none' tells the browser NOT to cache the sw.js
+      // script itself in the HTTP cache. Without this, iOS Safari caches
+      // sw.js for ~24h, so PWAs added to the home screen can sit on an
+      // old service worker (and therefore old HTML) for a full day even
+      // when reg.update() is called.
+      const reg = await navigator.serviceWorker.register('sw.js', {
+        updateViaCache: 'none'
+      });
+      // Force-check for an updated SW immediately, then again on any
+      // page focus / visibility change. Cheap + the real fix for "stuck
+      // on old version" reports from PWA users.
+      reg.update().catch(() => {});
+      const tryUpdate = () => { reg.update().catch(() => {}); };
+      window.addEventListener('focus', tryUpdate);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') tryUpdate();
+      });
+      // If a waiting worker already exists at startup (queued from the
+      // previous session), tell it to activate now.
+      if (reg.waiting) reg.waiting.postMessage({ type: 'SKIP_WAITING' });
+      // Same for any worker that becomes 'installed' while we're running.
+      reg.addEventListener('updatefound', () => {
+        const w = reg.installing;
+        if (!w) return;
+        w.addEventListener('statechange', () => {
+          if (w.state === 'installed' && navigator.serviceWorker.controller) {
+            w.postMessage({ type: 'SKIP_WAITING' });
+          }
+        });
+      });
       // Reload the page once a new SW takes control of it (only after
       // the first install — the very first SW shouldn't trigger a reload).
       let firstControl = !navigator.serviceWorker.controller;
