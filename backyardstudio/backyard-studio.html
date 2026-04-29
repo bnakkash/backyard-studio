@@ -198,6 +198,30 @@
     padding: 0;
   }
   #panel-close:active { background: var(--panel-hi); color: var(--text); }
+  #panel-mini {
+    display: none;
+    position: absolute;
+    top: 8px; right: 46px;
+    width: 30px; height: 30px;
+    background: transparent;
+    border: 1px solid var(--border);
+    border-radius: 2px;
+    color: var(--text-dim);
+    font-size: 11px;
+    line-height: 1;
+    cursor: pointer;
+    z-index: 1;
+    padding: 0;
+  }
+  #panel-mini:active { background: var(--panel-hi); color: var(--text); }
+  /* Mobile-only collapsed state hides everything except the first section */
+  @media (max-width: 780px) {
+    #right-panel.minimized {
+      max-height: 96px !important;
+      overflow: hidden;
+    }
+    #right-panel.minimized .section:not(:first-of-type) { display: none; }
+  }
   .section {
     padding: 14px 18px;
     border-bottom: 1px solid var(--border);
@@ -472,6 +496,25 @@
     font-family: inherit;
   }
 
+  #measure-label {
+    position: absolute;
+    pointer-events: none;
+    user-select: none;
+    transform: translate(-50%, -120%);
+    background: rgba(28, 33, 24, 0.94);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    padding: 4px 10px;
+    border-radius: 100px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 14;
+    white-space: nowrap;
+  }
+  #measure-label[hidden] { display: none; }
   #toast {
     position: absolute;
     top: calc(24px + var(--safe-top)); left: 50%;
@@ -893,7 +936,8 @@
     /* Hide the Layout section (Clear / Export / autosave status) while
        editing an item — the user can deselect to access it. */
     #right-panel.show .section:last-child { display: none; }
-    #panel-close { display: flex; align-items: center; justify-content: center; }
+    #panel-close,
+    #panel-mini { display: flex; align-items: center; justify-content: center; }
 
     #compass {
       top: calc(14px + var(--safe-top)); right: 12px; left: auto;
@@ -1037,6 +1081,7 @@
 </div>
 
 <div id="right-panel" class="panel">
+  <button id="panel-mini" aria-label="Minimize">▼</button>
   <button id="panel-close" aria-label="Close">×</button>
   <div class="section">
     <div class="section-label">Selection</div>
@@ -1045,6 +1090,7 @@
     </div>
   </div>
   <div class="section" id="selection-controls" style="display:none">
+    <div class="field"><span>Position</span><span class="val" id="sel-pos">—</span></div>
     <div class="field"><span>Rotation</span><span class="val" id="rot-value">0°</span></div>
     <div class="slider-row">
       <button class="step-btn" id="rot-minus" aria-label="Rotate -90°">−90°</button>
@@ -1061,6 +1107,7 @@
     </div>
     <div style="height:12px"></div>
     <div class="btn-row">
+      <button class="btn" id="focus-btn">Focus</button>
       <button class="btn" id="duplicate-btn">Duplicate</button>
       <button class="btn danger" id="delete-btn">Remove</button>
     </div>
@@ -1095,13 +1142,14 @@
   <button class="cam-btn icon-btn" id="rot-right" aria-label="Rotate camera 90° right" title="Rotate 90° right">↻</button>
   <span class="cam-divider"></span>
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
+  <button class="cam-btn" id="measure-btn" aria-pressed="false">Measure</button>
 </div>
 
 <div id="scale-bar">
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v59</div>
+<div id="version">v60</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1109,6 +1157,7 @@
   <kbd>⌘Z</kbd> undo &nbsp;·&nbsp; <kbd>⌘⇧Z</kbd> redo &nbsp;·&nbsp; <kbd>⌘D</kbd> duplicate &nbsp;·&nbsp; <kbd>g</kbd> snap
 </div>
 
+<div id="measure-label" hidden></div>
 <div id="toast"></div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
@@ -2827,6 +2876,11 @@ function selectItem(item) {
     setOutline(item, true);
     refreshSelectionPanel();
     setSelectionSheetVisible(true);
+    // Reset the panel-minimized state so a new selection opens expanded
+    const _rp = document.getElementById('right-panel');
+    if (_rp) _rp.classList.remove('minimized');
+    const _mb = document.getElementById('panel-mini');
+    if (_mb) _mb.textContent = '▼';
     if (changed && typeof haptic === 'function') haptic(8);
   } else {
     document.getElementById('selection-info').innerHTML =
@@ -2864,6 +2918,7 @@ function applyDragMove(newX, newZ) {
     off.item.mesh.position.z = sz + off.dz;
     if (off.item.outlineWrapper) off.item.outlineWrapper.position.copy(off.item.mesh.position);
   }
+  if (selection === dragItem) refreshSelectionPosition();
 }
 
 function toggleInSelection(item) {
@@ -2939,6 +2994,15 @@ function refreshSelectionPanel() {
   const sc = Math.round(selection.mesh.scale.x * 100);
   document.getElementById('scale-slider').value = sc;
   document.getElementById('scale-value').textContent = (sc / 100).toFixed(2) + '×';
+  refreshSelectionPosition();
+}
+function refreshSelectionPosition() {
+  if (!selection) return;
+  const el = document.getElementById('sel-pos');
+  if (!el) return;
+  const x = selection.mesh.position.x.toFixed(1);
+  const z = selection.mesh.position.z.toFixed(1);
+  el.textContent = `X ${x} ft · Z ${z} ft`;
 }
 
 // ============================================================
@@ -3386,6 +3450,123 @@ function setSelectionSheetVisible(visible) {
 document.getElementById('delete-btn').addEventListener('click', deleteSelected);
 document.getElementById('duplicate-btn').addEventListener('click', duplicateSelected);
 
+// Animate the camera target onto the selected item over ~350ms (ease-out
+// cubic). On a busy yard you can lose track of what you just selected;
+// "Focus" smoothly puts it dead-center on screen.
+let _focusRAF = null;
+function focusOnSelection() {
+  if (!selection) return;
+  if (_focusRAF !== null) cancelAnimationFrame(_focusRAF);
+  const start = target.clone();
+  const end = selection.mesh.position.clone();
+  end.y = 1; // keep target near ground
+  const t0 = performance.now();
+  const dur = 350;
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    target.lerpVectors(start, end, e);
+    updateCam();
+    if (k < 1) _focusRAF = requestAnimationFrame(step);
+    else _focusRAF = null;
+  };
+  _focusRAF = requestAnimationFrame(step);
+  haptic(8);
+}
+document.getElementById('focus-btn').addEventListener('click', focusOnSelection);
+
+// ============================================================
+// Measure tool — tap two ground points to read distance in feet.
+// ============================================================
+let measureMode = false;
+let measurePoints = [];                     // T.Vector3 in world coords
+const measureGroup = new T.Group();          // visuals (markers + line)
+scene.add(measureGroup);
+
+function clearMeasureVisuals() {
+  while (measureGroup.children.length) {
+    const c = measureGroup.children[0];
+    measureGroup.remove(c);
+    if (c.geometry) c.geometry.dispose();
+    if (c.material) c.material.dispose();
+  }
+}
+
+function redrawMeasure() {
+  clearMeasureVisuals();
+  const dotMat = new T.MeshBasicMaterial({ color: 0xd4a574 });
+  measurePoints.forEach((p) => {
+    const dot = new T.Mesh(new T.SphereGeometry(0.4, 12, 8), dotMat);
+    dot.position.copy(p);
+    dot.position.y = 0.4;
+    measureGroup.add(dot);
+  });
+  if (measurePoints.length === 2) {
+    const a = measurePoints[0], b = measurePoints[1];
+    const lineGeom = new T.BufferGeometry().setFromPoints([
+      new T.Vector3(a.x, 0.2, a.z),
+      new T.Vector3(b.x, 0.2, b.z)
+    ]);
+    const line = new T.Line(
+      lineGeom,
+      new T.LineBasicMaterial({ color: 0xd4a574 })
+    );
+    measureGroup.add(line);
+  }
+}
+
+function projectMeasureLabel() {
+  const label = document.getElementById('measure-label');
+  if (!label) return;
+  if (!measureMode || measurePoints.length !== 2) {
+    label.hidden = true;
+    return;
+  }
+  const a = measurePoints[0], b = measurePoints[1];
+  const dist = Math.hypot(a.x - b.x, a.z - b.z);
+  const mid = new T.Vector3((a.x + b.x) / 2, 0.4, (a.z + b.z) / 2);
+  mid.project(camera);
+  if (mid.z > 1) { label.hidden = true; return; }
+  const rect = canvas.getBoundingClientRect();
+  const x = (mid.x * 0.5 + 0.5) * rect.width + rect.left;
+  const y = (-mid.y * 0.5 + 0.5) * rect.height + rect.top;
+  label.style.left = x + 'px';
+  label.style.top = y + 'px';
+  label.textContent = dist.toFixed(1) + ' ft';
+  label.hidden = false;
+}
+
+function setMeasureMode(on) {
+  measureMode = !!on;
+  const btn = document.getElementById('measure-btn');
+  if (btn) {
+    btn.classList.toggle('active', measureMode);
+    btn.setAttribute('aria-pressed', measureMode ? 'true' : 'false');
+  }
+  if (measureMode) {
+    // Mutually-exclusive with placement / multi-select / yard-edit
+    clearPaletteSelection();
+    selectItem(null);
+    measurePoints = [];
+    redrawMeasure();
+    toast('Tap two points to measure');
+  } else {
+    measurePoints = [];
+    redrawMeasure();
+  }
+  projectMeasureLabel();
+}
+
+function addMeasurePoint(x, z) {
+  if (measurePoints.length >= 2) measurePoints = [];
+  measurePoints.push(new T.Vector3(x, 0, z));
+  redrawMeasure();
+  projectMeasureLabel();
+  haptic(8);
+}
+
+document.getElementById('measure-btn').addEventListener('click', () => setMeasureMode(!measureMode));
+
 function deleteSelected() {
   // Bulk-aware: deletes everything in selectionSet (which always includes
   // primary selection if there is one).
@@ -3505,7 +3686,20 @@ function rotateCameraBy(deltaTheta) {
 document.getElementById('rot-left').addEventListener('click', () => rotateCameraBy(-Math.PI / 2));
 document.getElementById('rot-right').addEventListener('click', () => rotateCameraBy(Math.PI / 2));
 
+// Mobile drawer-style minimize: collapses the right panel to just the
+// header (item name) so the user can see the yard around the selection
+// without losing their edit context.
+const _miniBtn = document.getElementById('panel-mini');
+_miniBtn.addEventListener('click', () => {
+  const panel = document.getElementById('right-panel');
+  panel.classList.toggle('minimized');
+  _miniBtn.textContent = panel.classList.contains('minimized') ? '▲' : '▼';
+});
+
 document.getElementById('panel-close').addEventListener('click', () => {
+  // Reset minimize state when closing so next selection opens expanded
+  document.getElementById('right-panel').classList.remove('minimized');
+  _miniBtn.textContent = '▼';
   selectItem(null);
   clearPaletteSelection();
 });
@@ -3674,7 +3868,10 @@ window.addEventListener('mouseup', e => {
         // Place only on a brisk tap. Press-and-hold without moving most likely
         // means the user intended to drag the camera and released early —
         // dropping an item there is the worst possible default.
-        if (selectedKind && dur < 300) {
+        if (measureMode && dur < 300) {
+          const pt = groundPick(e);
+          if (pt) addMeasurePoint(pt.x, pt.z);
+        } else if (selectedKind && dur < 300) {
           const pt = groundPick(e);
           if (pt) placeItem(selectedKind, pt.x, pt.z);
         } else if (!selectedKind) {
@@ -4030,7 +4227,10 @@ canvas.addEventListener('touchend', e => {
       if (dur < 300) { _lastTapTime = now; _lastTapX = t.clientX; _lastTapY = t.clientY; }
       // A press-and-release without movement most likely meant "I was about to
       // drag the camera." Only register a true brisk tap as a placement.
-      if (selectedKind && dur < 300) {
+      if (measureMode && dur < 300) {
+        const pt = groundPick(t);
+        if (pt) addMeasurePoint(pt.x, pt.z);
+      } else if (selectedKind && dur < 300) {
         const pt = groundPick(t);
         if (pt) placeItem(selectedKind, pt.x, pt.z);
       } else if (!selectedKind && dur < 300) {
@@ -4432,6 +4632,7 @@ function animate() {
   requestAnimationFrame(animate);
   updateCompass();
   updateScaleBar();
+  if (measureMode && measurePoints.length === 2) projectMeasureLabel();
   // Pulse the selection outline so it's easy to spot at any zoom level.
   if (selection && selection.outline) {
     const t = performance.now() * 0.003;
