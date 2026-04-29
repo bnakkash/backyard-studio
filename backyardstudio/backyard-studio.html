@@ -843,7 +843,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v51</div>
+<div id="version">v52</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -855,6 +855,12 @@
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
+// Bail with a readable message if Three.js failed to load (CDN blocked,
+// captive portal, offline before SW pre-cache populated).
+if (typeof THREE === 'undefined') {
+  document.body.innerHTML = '<div style="position:fixed;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;font-family:system-ui;color:#f2ede0;background:#12150e;text-align:center"><div><h2 style="font-family:Georgia,serif;font-weight:500;margin-bottom:12px">Three.js didn\'t load</h2><p style="color:#9ea290;font-size:14px;line-height:1.5;max-width:340px">The planner needs the Three.js library from cdnjs. Check your connection or try again — once the page loads once, it\'ll work offline.</p><button onclick="location.reload()" style="margin-top:18px;padding:10px 20px;background:#d4a574;color:#1a1a1a;border:none;border-radius:3px;font-family:inherit;font-size:13px;cursor:pointer">Reload</button></div></div>';
+  throw new Error('THREE is undefined — script tag failed to load');
+}
 const T = THREE;
 const canvas = document.getElementById('scene');
 
@@ -1063,13 +1069,17 @@ const YARD_UV_DEFAULT = [
   [0.3383, 0.7746],
 ];
 const YARD_UV = (() => {
+  // Reject NaN (typeof NaN === 'number'!) and out-of-range UV. A single bad
+  // value would produce degenerate geometry and brick the planner; bailing
+  // to default is recoverable.
+  const isFiniteUV = (n) => Number.isFinite(n) && n >= 0 && n <= 1;
   try {
     const s = localStorage.getItem('backyard_yard_uv');
     if (s) {
       const parsed = JSON.parse(s);
       if (Array.isArray(parsed) && parsed.length >= 3
           && parsed.every(p => Array.isArray(p) && p.length === 2
-                             && typeof p[0] === 'number' && typeof p[1] === 'number')) {
+                             && isFiniteUV(p[0]) && isFiniteUV(p[1]))) {
         return parsed;
       }
     }
@@ -2408,6 +2418,14 @@ function snapshotLayout() {
   }));
 }
 
+// Coerce a saved-entry numeric field to a safe finite number with a fallback.
+// Used when restoring layouts so a single corrupted field can't NaN-poison
+// the rest of the load (NaN x/z = invisible item, NaN scale = collapsed mesh).
+function safeNum(v, fallback) {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+}
+
 function pushHistory() {
   history.length = historyIdx + 1;
   history.push(snapshotLayout());
@@ -2445,9 +2463,9 @@ function restoreFrom(state) {
     const builder = PLACEABLES[d.kind] && PLACEABLES[d.kind].build;
     if (!builder) return;
     const mesh = builder();
-    mesh.position.set(d.x, 0, d.z);
-    mesh.rotation.y = d.rot;
-    mesh.scale.setScalar(d.scale);
+    mesh.position.set(safeNum(d.x, 0), 0, safeNum(d.z, 0));
+    mesh.rotation.y = safeNum(d.rot, 0);
+    mesh.scale.setScalar(safeNum(d.scale, 1));
     if (PLACEABLES[d.kind].category === 'Plants') jitterPlantColors(mesh);
     mesh.add(makeContactShadow(mesh));
     scene.add(mesh);
@@ -2856,9 +2874,9 @@ function scheduleAutosave() {
         const builder = PLACEABLES[d.kind]?.build;
         if (!builder) return;
         const mesh = builder();
-        mesh.position.set(d.x, 0, d.z);
-        mesh.rotation.y = d.rot;
-        mesh.scale.setScalar(d.scale);
+        mesh.position.set(safeNum(d.x, 0), 0, safeNum(d.z, 0));
+        mesh.rotation.y = safeNum(d.rot, 0);
+        mesh.scale.setScalar(safeNum(d.scale, 1));
         if (PLACEABLES[d.kind].category === 'Plants') jitterPlantColors(mesh);
         mesh.add(makeContactShadow(mesh));
         scene.add(mesh);
@@ -3228,11 +3246,15 @@ canvas.addEventListener('touchmove', e => {
     // always a camera operation. Tap empty space to deselect when you want
     // to manipulate the camera again.
     const onSelected = !!selection;
-    if (twoFingerMode === 'pinch' && lastTouchDist) {
+    if (twoFingerMode === 'pinch' && lastTouchDist && d > 8) {
+      // Guard against fingers stacked on top of each other producing a
+      // near-zero d (and thus an Infinity ratio that teleports the camera).
+      // 8px lower bound is well below normal pinch distances.
+      const ratio = Math.max(0.25, Math.min(4, lastTouchDist / d));
       if (onSelected) {
         applyScaleToSelection(selection.mesh.scale.x * (d / lastTouchDist));
       } else {
-        cam.radius = Math.max(8, Math.min(180, cam.radius * (lastTouchDist / d)));
+        cam.radius = Math.max(8, Math.min(180, cam.radius * ratio));
       }
     }
     // Tilt: drag up (dy<0) → phi increases → camera tilts toward horizontal

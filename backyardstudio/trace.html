@@ -303,7 +303,7 @@
 
   <canvas id="map" width="600" height="600"></canvas>
 
-  <button class="btn primary" id="mark-corner">Mark Corner</button>
+  <button class="btn primary" id="mark-corner" disabled>Waiting for compass…</button>
   <div class="btn-row">
     <button class="btn" id="undo-corner">Undo Last</button>
     <button class="btn" id="close-loop" disabled>Close Loop</button>
@@ -339,6 +339,7 @@ let corners = [];          // [{ x, z }] in feet, x = east, z = south
 let steps = 0;             // steps since last marked corner
 let stepsTotal = 0;        // for stats
 let currentHeading = 0;    // degrees from north, 0..360
+let headingReceived = false;
 let lastStepTime = 0;
 let lastMag = 0;
 let isTracing = false;
@@ -398,6 +399,11 @@ function attachSensors() {
     }
     if (h != null && !isNaN(h)) {
       currentHeading = h;
+      if (!headingReceived) {
+        headingReceived = true;
+        const mc = document.getElementById('mark-corner');
+        if (mc) { mc.disabled = false; mc.textContent = 'Mark Corner'; }
+      }
       updateCompassUI();
     }
   }, true);
