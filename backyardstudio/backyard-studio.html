@@ -1177,7 +1177,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v70</div>
+<div id="version">v71</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3627,6 +3627,7 @@ function enterWalkMode() {
   walkSpeed = 0;
   _walkBobPhase = 0;
   _walkReleaseTime = 0;
+  _walkLookId = null;
   walkMode = true;
   updateCam();
   document.getElementById('walk-btn').classList.add('active');
@@ -3640,6 +3641,7 @@ function exitWalkMode() {
   walkingForward = false;
   walkHadSecondFinger = false;
   _walkReleaseTime = 0;
+  _walkLookId = null;
   if (_walkTeleportRAF !== null) { cancelAnimationFrame(_walkTeleportRAF); _walkTeleportRAF = null; }
   if (_savedCamForWalk) {
     cam.theta = _savedCamForWalk.theta;
@@ -3935,6 +3937,10 @@ let walkSpeed = 0;                // ft/sec, eased toward target
 // reposition and keep going). _walkReleaseTime = 0 means "not in grace."
 const WALK_GRACE_MS = 700;
 let _walkReleaseTime = 0;
+// Track the look finger's persistent Touch identifier so look-drag follows
+// the right finger even when the user lifts/repositions one of two touches
+// (which can shuffle e.touches[] order after a re-press).
+let _walkLookId = null;
 const WALK_MAX_SPEED = 6.5;       // ft/sec at full pace
 let _walkBobPhase = 0;            // accumulated phase for head bob
 let _savedCamForWalk = null;
@@ -4226,11 +4232,21 @@ canvas.addEventListener('touchstart', e => {
       walkingForward = false;
       walkHadSecondFinger = false;
       _walkReleaseTime = 0;
+      _walkLookId = t.identifier;
     }
     if (e.touches.length >= 2) {
+      // Additional finger = walk forward. Don't reassign the look finger;
+      // the originally-tracked one keeps driving the camera.
       walkingForward = true;
       walkHadSecondFinger = true;
       _walkReleaseTime = 0; // re-engaged before grace expired; cancel timer
+      // If we somehow lost the look id (e.g. starting walk with 2 fingers
+      // already down), claim the first one.
+      if (_walkLookId === null) {
+        const t0 = e.touches[0];
+        _walkLookId = t0.identifier;
+        lastMouse = { x: t0.clientX, y: t0.clientY };
+      }
     }
     return;
   }
@@ -4279,11 +4295,23 @@ canvas.addEventListener('touchstart', e => {
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   if (walkMode) {
-    // Look-drag follows the FIRST finger, regardless of whether a second
-    // finger is also on screen (which is the "walk forward" gesture).
-    // touches[0] is the first-down finger as long as it's still touching.
+    // Look-drag follows the tracked look finger by identifier. Touch
+    // identifiers persist across re-presses, so the camera doesn't get
+    // hijacked when a stationary "walk forward" finger ends up at
+    // touches[0] after the user lifts and re-presses the look finger.
     if (touchState !== 'walk' || e.touches.length === 0) return;
-    const t = e.touches[0];
+    let t = null;
+    for (let i = 0; i < e.touches.length; i++) {
+      if (e.touches[i].identifier === _walkLookId) { t = e.touches[i]; break; }
+    }
+    if (!t) {
+      // Lost track (rare) — re-bind to the first available touch and skip
+      // this frame to avoid a delta jump.
+      t = e.touches[0];
+      _walkLookId = t.identifier;
+      lastMouse = { x: t.clientX, y: t.clientY };
+      return;
+    }
     const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
     if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) {
       didDrag = true;
@@ -4434,12 +4462,16 @@ canvas.addEventListener('touchend', e => {
       walkingForward = false;
       walkHadSecondFinger = false;
       _walkReleaseTime = 0; // fully released; no grace
+      _walkLookId = null;
     } else if (e.touches.length === 1) {
-      // Lifted from 2 fingers down to 1 — start the grace window so users
-      // can reposition their 2nd finger without losing momentum.
+      // Lifted from 2 fingers down to 1. Start the grace window so users
+      // can reposition without losing momentum, and rebind the look finger
+      // to whichever touch survived — that's the one they'll drag for look
+      // until the second finger comes back down.
       if (walkingForward) _walkReleaseTime = performance.now();
       walkingForward = false;
       const t = e.touches[0];
+      _walkLookId = t.identifier;
       lastMouse = { x: t.clientX, y: t.clientY };
     }
     return;
