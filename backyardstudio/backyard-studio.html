@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v80</div>
+<div id="version">v81</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1770,7 +1770,7 @@ function buildHouseWindow(w, h, frameColor, glassColor) {
   const grp = new T.Group();
   const glass = new T.Mesh(
     new T.BoxGeometry(w, h, 0.1),
-    new T.MeshStandardMaterial({ color: glassColor, emissive: 0x1a2030, roughness: 0.18, metalness: 0.55 })
+    new T.MeshStandardMaterial({ color: glassColor, emissive: 0x1a2030, roughness: 0.45, metalness: 0.1 })
   );
   grp.add(glass);
   const frame = new T.Mesh(
@@ -2077,8 +2077,8 @@ const PLACEABLES = {
         new T.BoxGeometry(11, 0.3, 7),
         new T.MeshStandardMaterial({
           color: 0x3f9ed0, transparent: true, opacity: 0.88,
-          roughness: 0.05, metalness: 0.1,           // glassy water
-          envMapIntensity: 1.4                       // pull in extra sky reflection
+          roughness: 0.35, metalness: 0,
+          emissive: 0x0a3a52, emissiveIntensity: 0.18  // self-glow keeps water bright without env reflections
         })
       );
       pool.position.y = 0.24; g.add(pool);
@@ -2105,7 +2105,8 @@ const PLACEABLES = {
         new T.CylinderGeometry(1.55, 1.55, 0.1, 16),
         new T.MeshStandardMaterial({
           color: 0x4fa8c8, transparent: true, opacity: 0.8,
-          roughness: 0.05, metalness: 0.1, envMapIntensity: 1.4
+          roughness: 0.35, metalness: 0,
+          emissive: 0x10465c, emissiveIntensity: 0.2
         })
       );
       water.position.y = 1.15; g.add(water);
@@ -2644,7 +2645,7 @@ const PLACEABLES = {
       const wallMat   = new T.MeshStandardMaterial({ color: 0xe8d8b8 });
       const roofMat   = new T.MeshStandardMaterial({ color: 0x6b4a3a });
       const trimMat   = new T.MeshStandardMaterial({ color: 0xf5ede0 });
-      const windowMat = new T.MeshStandardMaterial({ color: 0x506a82, emissive: 0x1a2030, roughness: 0.18, metalness: 0.55 });
+      const windowMat = new T.MeshStandardMaterial({ color: 0x506a82, emissive: 0x1a2030, roughness: 0.45, metalness: 0.1 });
       const doorMat   = new T.MeshStandardMaterial({ color: 0x4a3828 });
       const stoneMat  = new T.MeshStandardMaterial({ color: 0x8a8275, map: stoneTex, roughness: 0.9, metalness: 0 });
 
@@ -5127,26 +5128,6 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
-
-// ============================================================
-// Environment map — one-time PMREM bake of the sky so glass and
-// metallic surfaces reflect the sky/horizon instead of looking
-// flatly painted. Done after first frame so the scene is ready.
-// ============================================================
-requestAnimationFrame(() => {
-  try {
-    const pmrem = new T.PMREMGenerator(renderer);
-    pmrem.compileEquirectangularShader();
-    // Hide point-bright objects so they don't bake as harsh hotspots in
-    // the reflection probe; the gradient sky alone is enough.
-    const wasSunDisc = sunDisc.visible, wasHalo = sunHalo.visible;
-    sunDisc.visible = false; sunHalo.visible = false;
-    const envRT = pmrem.fromScene(scene, 0.04, 1, 600);
-    sunDisc.visible = wasSunDisc; sunHalo.visible = wasHalo;
-    scene.environment = envRT.texture;
-    pmrem.dispose();
-  } catch (e) { /* env map is a polish, not load-bearing */ }
-});
 
 // ============================================================
 // Sun-time slider wiring + persistence
