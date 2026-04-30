@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v82</div>
+<div id="version">v83</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1835,59 +1835,86 @@ const PLACEABLES = {
     name: 'Shade Tree', category: 'Plants', icon: '🌳', footprint: 'Mature ~25 ft tall',
     build: () => {
       const g = new T.Group();
-      const woodMat = new T.MeshStandardMaterial({ color: 0x4a3828 });
-      // Trunk + visible branching at top so you can read the structure
-      const trunk = new T.Mesh(
-        new T.CylinderGeometry(0.7, 0.95, 8, 10),
-        woodMat
-      );
-      trunk.position.y = 4; trunk.castShadow = true; g.add(trunk);
-      // 3 main branches splaying out from the upper trunk
-      const branchTops = [];
-      for (let i = 0; i < 3; i++) {
-        const a = (i / 3) * Math.PI * 2 + 0.4;
-        const tilt = 0.55 + Math.random() * 0.2;
-        const len = 3.5 + Math.random() * 1.2;
-        const tip = new T.Vector3(
-          Math.sin(tilt) * len * Math.cos(a),
-          8 + Math.cos(tilt) * len,
-          Math.sin(tilt) * len * Math.sin(a)
-        );
-        const dir = new T.Vector3(tip.x, tip.y - 8, tip.z);
-        const branch = new T.Mesh(
-          new T.CylinderGeometry(0.18, 0.45, dir.length(), 6),
+      const woodMat = new T.MeshStandardMaterial({ color: 0x4a3828, roughness: 0.95, metalness: 0 });
+      const folMats = [
+        new T.MeshStandardMaterial({ color: 0x2d5a30, flatShading: true, roughness: 1 }),
+        new T.MeshStandardMaterial({ color: 0x437245, flatShading: true, roughness: 1 }),
+        new T.MeshStandardMaterial({ color: 0x5d8c52, flatShading: true, roughness: 1 })
+      ];
+      const _Y = new T.Vector3(0, 1, 0);
+      const _alt = new T.Vector3(1, 0, 0);
+
+      // Tapered branch segment from `start` to `end`.
+      function addBranch(start, end, rStart, rEnd) {
+        const delta = end.clone().sub(start);
+        const len = delta.length();
+        const segs = rStart > 0.4 ? 8 : 5;
+        const cyl = new T.Mesh(
+          new T.CylinderGeometry(rEnd, rStart, len, segs),
           woodMat
         );
-        branch.position.set(tip.x / 2, 8 + dir.length() / 2 - dir.length() / 2, tip.z / 2);
-        branch.position.y = 8 + (tip.y - 8) / 2;
-        branch.quaternion.setFromUnitVectors(
-          new T.Vector3(0, 1, 0),
-          dir.clone().normalize()
-        );
-        branch.castShadow = true;
-        g.add(branch);
-        branchTops.push(tip);
+        cyl.position.copy(start).add(end).multiplyScalar(0.5);
+        cyl.quaternion.setFromUnitVectors(_Y, delta.normalize());
+        cyl.castShadow = true;
+        g.add(cyl);
       }
-      // Multi-layered canopy: large dark base, medium mid, lighter highlights
-      const folBase  = new T.MeshStandardMaterial({ color: 0x2d5a30, flatShading: true });
-      const folMid   = new T.MeshStandardMaterial({ color: 0x437245, flatShading: true });
-      const folHi    = new T.MeshStandardMaterial({ color: 0x5d8c52, flatShading: true });
-      // 4 large overlapping canopy clumps (squashed slightly — wider than tall)
-      const clumps = [
-        { pos: [0, 12.2, 0],     r: 5.2, mat: folBase },
-        { pos: [-2.4, 13.2, 1.5],r: 3.6, mat: folMid },
-        { pos: [2.6, 12.5, -1.2],r: 3.8, mat: folMid },
-        { pos: [0, 14.6, 0],     r: 3.0, mat: folHi },
-        { pos: [-1.5, 11.8, -2.5], r: 2.8, mat: folMid },
-        { pos: [1.8, 14.0, 1.8], r: 2.4, mat: folHi }
-      ];
-      clumps.forEach(c => {
-        const m = new T.Mesh(new T.IcosahedronGeometry(c.r, 1), c.mat);
-        m.position.set(c.pos[0], c.pos[1], c.pos[2]);
-        m.scale.set(1.05, 0.85, 1.05);
-        m.castShadow = true; m.receiveShadow = true;
-        g.add(m);
-      });
+      // Foliage cluster at a terminal tip — small overlapping icospheres.
+      function addFoliage(pos, size) {
+        const count = 2 + Math.floor(Math.random() * 2);
+        for (let i = 0; i < count; i++) {
+          const r = size * (0.7 + Math.random() * 0.5);
+          const m = new T.Mesh(
+            new T.IcosahedronGeometry(r, 0),
+            folMats[Math.floor(Math.random() * folMats.length)]
+          );
+          m.position.copy(pos);
+          m.position.x += (Math.random() - 0.5) * size * 0.7;
+          m.position.y += (Math.random() - 0.5) * size * 0.5;
+          m.position.z += (Math.random() - 0.5) * size * 0.7;
+          m.scale.set(1.1, 0.85, 1.1);
+          m.castShadow = true; m.receiveShadow = true;
+          g.add(m);
+        }
+      }
+      // Recursive branch grower. Each call adds one branch segment, then
+      // either drops foliage at the tip or spawns 2-3 child branches that
+      // fan outward from the parent direction.
+      function grow(start, dir, length, radius, depth) {
+        const end = start.clone().addScaledVector(dir, length);
+        addBranch(start, end, radius, radius * 0.65);
+        if (depth >= 4 || length < 0.6) {
+          addFoliage(end, 1.1 + Math.random() * 0.5);
+          return;
+        }
+        const numChildren = depth < 1 ? 3 : 2;
+        for (let i = 0; i < numChildren; i++) {
+          // Build child direction = rotate parent dir around an axis
+          // perpendicular to dir, then twist around dir for radial spread.
+          const tiltAxis = (Math.abs(dir.y) < 0.9 ? _Y : _alt).clone().cross(dir).normalize();
+          const twistAng = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.9;
+          tiltAxis.applyAxisAngle(dir, twistAng);
+          const childDir = dir.clone().applyAxisAngle(tiltAxis, 0.45 + Math.random() * 0.45);
+          const childLen = length * (0.6 + Math.random() * 0.2);
+          const childRad = radius * (0.6 + Math.random() * 0.12);
+          grow(end, childDir, childLen, childRad, depth + 1);
+        }
+      }
+
+      // Trunk: 8 ft tall, tapered.
+      const trunkTop = new T.Vector3(0, 8, 0);
+      addBranch(new T.Vector3(0, 0, 0), trunkTop, 0.95, 0.55);
+      // 3 main branches splaying upward and outward from the crown.
+      const numMain = 3 + Math.floor(Math.random() * 2);
+      for (let i = 0; i < numMain; i++) {
+        const a = (i / numMain) * Math.PI * 2 + Math.random() * 0.5;
+        const tilt = 0.55 + Math.random() * 0.25;
+        const dir = new T.Vector3(
+          Math.sin(tilt) * Math.cos(a),
+          Math.cos(tilt),
+          Math.sin(tilt) * Math.sin(a)
+        );
+        grow(trunkTop, dir, 4 + Math.random() * 1.2, 0.4, 0);
+      }
       return g;
     }
   },
