@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v77</div>
+<div id="version">v78</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1243,9 +1243,103 @@ renderer.outputEncoding = T.sRGBEncoding;
 // Filmic rolloff so bright highlights (sun disc, oranges, pool surface) don't
 // clip and shadow midtones gain a touch of contrast. Keep exposure neutral.
 renderer.toneMapping = T.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.0;
+renderer.toneMappingExposure = 1.15;
 
 const camera = new T.PerspectiveCamera(55, window.innerWidth / window.innerHeight, 0.1, 500);
+
+// ============================================================
+// Procedural textures — generated to <canvas> at runtime so the app
+// stays a single offline-capable file (no external image assets).
+// Each builder returns { map, normal? } where map is sRGB-encoded.
+// ============================================================
+function _seededRand(seed) {
+  // tiny mulberry32 for repeatable noise without polluting Math.random
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+function _canvasTex(size, draw, opts) {
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  draw(c.getContext('2d'), size);
+  const tex = new T.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = T.RepeatWrapping;
+  tex.encoding = T.sRGBEncoding;
+  tex.anisotropy = renderer.capabilities.getMaxAnisotropy ? renderer.capabilities.getMaxAnisotropy() : 1;
+  if (opts && opts.repeat) tex.repeat.set(opts.repeat, opts.repeat);
+  return tex;
+}
+const grassTex = _canvasTex(256, (g, S) => {
+  // Base lawn green with subtle hue variation, then fine "blade" noise
+  // and a few clumps of darker/lighter tufts to break tiling.
+  const rand = _seededRand(7);
+  const grad = g.createLinearGradient(0, 0, S, S);
+  grad.addColorStop(0, '#4a6a3e');
+  grad.addColorStop(1, '#3e5c34');
+  g.fillStyle = grad; g.fillRect(0, 0, S, S);
+  // Speckle of blade tints
+  for (let i = 0; i < 6000; i++) {
+    const x = rand() * S, y = rand() * S;
+    const v = rand();
+    const c = v < 0.5 ? '#3a5530' : v < 0.85 ? '#5d7e4a' : '#86a06a';
+    g.fillStyle = c;
+    g.fillRect(x, y, 1, 1 + (rand() < 0.3 ? 1 : 0));
+  }
+  // Tufts
+  for (let i = 0; i < 22; i++) {
+    const x = rand() * S, y = rand() * S, r = 8 + rand() * 18;
+    const dark = rand() < 0.5;
+    g.fillStyle = dark ? 'rgba(40,60,30,0.18)' : 'rgba(120,150,90,0.14)';
+    g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+}, { repeat: 18 });
+const woodTex = _canvasTex(256, (g, S) => {
+  // Vertical grain with knots — deck/fence wood.
+  const rand = _seededRand(3);
+  g.fillStyle = '#a67c52'; g.fillRect(0, 0, S, S);
+  for (let x = 0; x < S; x += 1) {
+    const t = (Math.sin(x * 0.08) + Math.sin(x * 0.27 + 1.3)) * 0.5;
+    const v = 80 + Math.floor(t * 18 + rand() * 30);
+    g.fillStyle = 'rgba(' + (v + 60) + ',' + (v + 30) + ',' + (v - 5) + ',0.35)';
+    g.fillRect(x, 0, 1, S);
+  }
+  // Knots
+  for (let i = 0; i < 5; i++) {
+    const x = rand() * S, y = rand() * S, r = 4 + rand() * 7;
+    const grd = g.createRadialGradient(x, y, 1, x, y, r);
+    grd.addColorStop(0, 'rgba(60,40,25,0.85)');
+    grd.addColorStop(1, 'rgba(60,40,25,0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+}, { repeat: 4 });
+const stoneTex = _canvasTex(256, (g, S) => {
+  // Mottled stone — used for slabs, pavers, planter rims.
+  const rand = _seededRand(11);
+  g.fillStyle = '#b8a88a'; g.fillRect(0, 0, S, S);
+  for (let i = 0; i < 4000; i++) {
+    const x = rand() * S, y = rand() * S;
+    const v = rand();
+    const c = v < 0.4 ? 'rgba(140,128,105,0.5)'
+            : v < 0.75 ? 'rgba(190,178,158,0.4)'
+            : 'rgba(90,80,65,0.4)';
+    g.fillStyle = c; g.fillRect(x, y, 1 + Math.floor(rand() * 2), 1);
+  }
+  // Subtle veins
+  for (let i = 0; i < 20; i++) {
+    const x = rand() * S, y = rand() * S;
+    g.strokeStyle = 'rgba(110,98,80,0.25)';
+    g.lineWidth = 0.6;
+    g.beginPath();
+    g.moveTo(x, y);
+    g.bezierCurveTo(x + rand() * 60 - 30, y + rand() * 60 - 30,
+                    x + rand() * 60 - 30, y + rand() * 60 - 30,
+                    x + rand() * 100 - 50, y + rand() * 100 - 50);
+    g.stroke();
+  }
+}, { repeat: 6 });
 
 // ============================================================
 // Lighting
@@ -1397,9 +1491,23 @@ function makeGrassTexture(base, variation, density, repeat) {
     ctx.fillStyle = `rgba(${r},${g},${b},0.55)`;
     ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
   }
+  // Tufts: soft circular shadow/highlight blobs that break up the regular
+  // tiling and make the lawn read as having clumps and bare patches.
+  for (let i = 0; i < 18; i++) {
+    const x = Math.random() * 256, y = Math.random() * 256, r = 8 + Math.random() * 22;
+    const dark = Math.random() < 0.55;
+    ctx.fillStyle = dark ? 'rgba(40,60,30,0.18)' : 'rgba(160,190,120,0.15)';
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+  }
   const tex = new T.CanvasTexture(c);
   tex.wrapS = tex.wrapT = T.RepeatWrapping;
   tex.repeat.set(repeat, repeat);
+  // Critical for the PBR/sRGB pipeline — without this, color textures used
+  // as `map` come out washed out because the renderer expects sRGB input.
+  tex.encoding = T.sRGBEncoding;
+  if (renderer.capabilities.getMaxAnisotropy) {
+    tex.anisotropy = Math.min(8, renderer.capabilities.getMaxAnisotropy());
+  }
   return tex;
 }
 
@@ -1483,7 +1591,7 @@ yardGeom.setAttribute('uv', new T.BufferAttribute(uvs, 2));
 
 const yard = new T.Mesh(
   yardGeom,
-  new T.MeshLambertMaterial({
+  new T.MeshStandardMaterial({
     // Saint Augustine grass palette: warmer, broader-blade look.
     // Lighter green base, occasional yellow-green and dark-green specs.
     map: makeGrassTexture(
@@ -1496,6 +1604,8 @@ const yard = new T.Mesh(
       },
       1100, 7
     ),
+    roughness: 0.95,
+    metalness: 0,
     polygonOffset: true,
     polygonOffsetFactor: 1,
     polygonOffsetUnits: 1,
@@ -1516,8 +1626,8 @@ const HOUSE_EDGE_STARTS    = new Set([9, 10, 11, 12, 13, 14, 15, 16]);
 const HOUSE_INTERIOR_VERTS = new Set([10, 11, 12, 13, 14, 15, 16]);
 const fenceGroup = new T.Group();        // always-visible fence (yard edges)
 const fenceHouseGroup = new T.Group();   // house-edge fence — visible only when house hidden
-const fenceWoodMat = new T.MeshLambertMaterial({ color: 0xa67c52 });
-const fenceTopMat  = new T.MeshLambertMaterial({ color: 0x7a5634 });
+const fenceWoodMat = new T.MeshStandardMaterial({ color: 0xa67c52, map: woodTex, roughness: 0.92, metalness: 0 });
+const fenceTopMat  = new T.MeshStandardMaterial({ color: 0x7a5634 });
 
 // Build a wood-picket fence segment from (x1,z1) → (x2,z2): two horizontal
 // stringers (top + middle) plus vertical pickets at ~6 inch spacing.
@@ -1614,7 +1724,7 @@ const houseWallGeom = new T.ExtrudeGeometry(houseShape, { depth: HOUSE_HEIGHT, b
 houseWallGeom.rotateX(-Math.PI / 2);
 const houseWalls = new T.Mesh(
   houseWallGeom,
-  new T.MeshLambertMaterial({ color: 0xf2ebd8 })
+  new T.MeshStandardMaterial({ color: 0xf2ebd8 })
 );
 houseWalls.castShadow = true;
 houseWalls.receiveShadow = true;
@@ -1635,7 +1745,7 @@ houseRoofGeom.scale(1.04, 1, 1.04);
 houseRoofGeom.translate(_roofCtr.x, 0, _roofCtr.z);
 const houseRoof = new T.Mesh(
   houseRoofGeom,
-  new T.MeshLambertMaterial({ color: 0x1a1612 })
+  new T.MeshStandardMaterial({ color: 0x1a1612 })
 );
 houseRoof.position.y = HOUSE_HEIGHT;
 houseRoof.castShadow = true;
@@ -1646,7 +1756,7 @@ scene.add(houseRoof);
 const _chimneyH = 6.5;
 const houseChimney = new T.Mesh(
   new T.BoxGeometry(1.5, _chimneyH, 1.5),
-  new T.MeshLambertMaterial({ color: 0xeae0c8 })
+  new T.MeshStandardMaterial({ color: 0xeae0c8 })
 );
 houseChimney.position.set(8, HOUSE_HEIGHT + ROOF_THICKNESS + _chimneyH / 2 - 0.2, 30);
 houseChimney.castShadow = true;
@@ -1660,19 +1770,19 @@ function buildHouseWindow(w, h, frameColor, glassColor) {
   const grp = new T.Group();
   const glass = new T.Mesh(
     new T.BoxGeometry(w, h, 0.1),
-    new T.MeshLambertMaterial({ color: glassColor, emissive: 0x1a2030 })
+    new T.MeshStandardMaterial({ color: glassColor, emissive: 0x1a2030, roughness: 0.18, metalness: 0.55 })
   );
   grp.add(glass);
   const frame = new T.Mesh(
     new T.BoxGeometry(w + 0.3, h + 0.3, 0.06),
-    new T.MeshLambertMaterial({ color: frameColor })
+    new T.MeshStandardMaterial({ color: frameColor })
   );
   frame.position.z = -0.02;
   grp.add(frame);
   for (const off of [-w / 6, w / 6]) {
     const m = new T.Mesh(
       new T.BoxGeometry(0.08, h - 0.1, 0.08),
-      new T.MeshLambertMaterial({ color: frameColor })
+      new T.MeshStandardMaterial({ color: frameColor })
     );
     m.position.set(off, 0, 0.07);
     grp.add(m);
@@ -1695,7 +1805,7 @@ scene.add(winW);
 // Subtle outer grass ring so the polygon doesn't float over a void
 const outerGrass = new T.Mesh(
   new T.PlaneGeometry(360, 360, 1, 1),
-  new T.MeshLambertMaterial({
+  new T.MeshStandardMaterial({
     map: makeGrassTexture(
       '#6a8552',
       () => [70 + Math.random()*30, 115 + Math.random()*30, 60 + Math.random()*20],
@@ -1724,7 +1834,7 @@ const PLACEABLES = {
     name: 'Shade Tree', category: 'Plants', icon: '🌳', footprint: 'Mature ~25 ft tall',
     build: () => {
       const g = new T.Group();
-      const woodMat = new T.MeshLambertMaterial({ color: 0x4a3828 });
+      const woodMat = new T.MeshStandardMaterial({ color: 0x4a3828 });
       // Trunk + visible branching at top so you can read the structure
       const trunk = new T.Mesh(
         new T.CylinderGeometry(0.7, 0.95, 8, 10),
@@ -1758,9 +1868,9 @@ const PLACEABLES = {
         branchTops.push(tip);
       }
       // Multi-layered canopy: large dark base, medium mid, lighter highlights
-      const folBase  = new T.MeshLambertMaterial({ color: 0x2d5a30, flatShading: true });
-      const folMid   = new T.MeshLambertMaterial({ color: 0x437245, flatShading: true });
-      const folHi    = new T.MeshLambertMaterial({ color: 0x5d8c52, flatShading: true });
+      const folBase  = new T.MeshStandardMaterial({ color: 0x2d5a30, flatShading: true });
+      const folMid   = new T.MeshStandardMaterial({ color: 0x437245, flatShading: true });
+      const folHi    = new T.MeshStandardMaterial({ color: 0x5d8c52, flatShading: true });
       // 4 large overlapping canopy clumps (squashed slightly — wider than tall)
       const clumps = [
         { pos: [0, 12.2, 0],     r: 5.2, mat: folBase },
@@ -1786,10 +1896,10 @@ const PLACEABLES = {
       const g = new T.Group();
       const trunk = new T.Mesh(
         new T.CylinderGeometry(0.55, 0.8, 18, 10),
-        new T.MeshLambertMaterial({ color: 0x7a5f3f })
+        new T.MeshStandardMaterial({ color: 0x7a5f3f })
       );
       trunk.position.y = 9; trunk.castShadow = true; g.add(trunk);
-      const frondMat = new T.MeshLambertMaterial({ color: 0x4a7a3a, side: T.DoubleSide });
+      const frondMat = new T.MeshStandardMaterial({ color: 0x4a7a3a, side: T.DoubleSide });
       for (let i = 0; i < 9; i++) {
         const frond = new T.Mesh(new T.BoxGeometry(8, 0.18, 1.2), frondMat);
         frond.position.x = 3.7;
@@ -1804,7 +1914,7 @@ const PLACEABLES = {
       // Coconuts
       const coconut = new T.Mesh(
         new T.SphereGeometry(0.45, 6, 5),
-        new T.MeshLambertMaterial({ color: 0x2a1d10 })
+        new T.MeshStandardMaterial({ color: 0x2a1d10 })
       );
       coconut.position.set(0.5, 17.5, 0.4);
       g.add(coconut);
@@ -1817,9 +1927,9 @@ const PLACEABLES = {
     build: () => {
       const g = new T.Group();
       // Two foliage tones break the smooth-blob look
-      const folA = new T.MeshLambertMaterial({ color: 0x456e34, flatShading: true });
-      const folB = new T.MeshLambertMaterial({ color: 0x5a8a48, flatShading: true });
-      const flowerMat = new T.MeshLambertMaterial({ color: 0xe8a3b8 });
+      const folA = new T.MeshStandardMaterial({ color: 0x456e34, flatShading: true });
+      const folB = new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true });
+      const flowerMat = new T.MeshStandardMaterial({ color: 0xe8a3b8 });
       // Low spreading mound — 8 clumps in a rough disc, slightly squashed
       const clumps = 8;
       for (let i = 0; i < clumps; i++) {
@@ -1862,13 +1972,13 @@ const PLACEABLES = {
       const g = new T.Group();
       const base = new T.Mesh(
         new T.BoxGeometry(4, 0.25, 2),
-        new T.MeshLambertMaterial({ color: 0x3d2b1f })
+        new T.MeshStandardMaterial({ color: 0x3d2b1f })
       );
       base.position.y = 0.125; base.receiveShadow = true; base.castShadow = true;
       g.add(base);
       const soil = new T.Mesh(
         new T.BoxGeometry(3.7, 0.05, 1.7),
-        new T.MeshLambertMaterial({ color: 0x1e1408 })
+        new T.MeshStandardMaterial({ color: 0x1e1408 })
       );
       soil.position.y = 0.26; g.add(soil);
       const colors = [0xd96a6a, 0xe6a94e, 0xd4d469, 0xc775c1, 0xf0f0d0];
@@ -1876,7 +1986,7 @@ const PLACEABLES = {
         const c = colors[Math.floor(Math.random() * colors.length)];
         const f = new T.Mesh(
           new T.SphereGeometry(0.13, 6, 5),
-          new T.MeshLambertMaterial({ color: c })
+          new T.MeshStandardMaterial({ color: c })
         );
         f.position.set(
           (Math.random() - 0.5) * 3.5,
@@ -1894,21 +2004,21 @@ const PLACEABLES = {
       const g = new T.Group();
       const box = new T.Mesh(
         new T.BoxGeometry(4, 0.55, 3),
-        new T.MeshLambertMaterial({ color: 0x5c4228 })
+        new T.MeshStandardMaterial({ color: 0x5c4228 })
       );
       box.position.y = 0.275;
       box.castShadow = true; box.receiveShadow = true;
       g.add(box);
       const soil = new T.Mesh(
         new T.BoxGeometry(3.7, 0.05, 2.7),
-        new T.MeshLambertMaterial({ color: 0x2a1e12 })
+        new T.MeshStandardMaterial({ color: 0x2a1e12 })
       );
       soil.position.y = 0.58; g.add(soil);
       for (let r = 0; r < 2; r++) {
         for (let c = 0; c < 4; c++) {
           const v = new T.Mesh(
             new T.SphereGeometry(0.26, 6, 5),
-            new T.MeshLambertMaterial({ color: 0x5a8a3a })
+            new T.MeshStandardMaterial({ color: 0x5a8a3a })
           );
           v.position.set(-1.4 + c * 0.9, 0.78, -0.6 + r * 1.2);
           v.castShadow = true; g.add(v);
@@ -1924,7 +2034,7 @@ const PLACEABLES = {
       const size = 10;
       const slab = new T.Mesh(
         new T.BoxGeometry(size, 0.15, size),
-        new T.MeshLambertMaterial({ color: 0xb8a88a })
+        new T.MeshStandardMaterial({ color: 0xb8a88a, map: stoneTex, roughness: 0.85, metalness: 0 })
       );
       slab.position.y = 0.075; slab.receiveShadow = true; g.add(slab);
       const lineMat = new T.LineBasicMaterial({ color: 0x8a7a60 });
@@ -1941,7 +2051,7 @@ const PLACEABLES = {
     name: 'Wood Deck', category: 'Hardscape', icon: '▬', footprint: '12 × 8 ft',
     build: () => {
       const g = new T.Group();
-      const mat = new T.MeshLambertMaterial({ color: 0x8a6842 });
+      const mat = new T.MeshStandardMaterial({ color: 0x8a6842, map: woodTex, roughness: 0.88, metalness: 0 });
       const base = new T.Mesh(new T.BoxGeometry(12, 0.4, 8), mat);
       base.position.y = 0.2; base.castShadow = true; base.receiveShadow = true;
       g.add(base);
@@ -1960,18 +2070,18 @@ const PLACEABLES = {
       const g = new T.Group();
       const deck = new T.Mesh(
         new T.BoxGeometry(16, 0.22, 12),
-        new T.MeshLambertMaterial({ color: 0xd4c8ac })
+        new T.MeshStandardMaterial({ color: 0xd4c8ac, map: woodTex, roughness: 0.85, metalness: 0 })
       );
       deck.position.y = 0.11; deck.receiveShadow = true; g.add(deck);
       const pool = new T.Mesh(
         new T.BoxGeometry(11, 0.3, 7),
-        new T.MeshLambertMaterial({ color: 0x3f9ed0, transparent: true, opacity: 0.88 })
+        new T.MeshStandardMaterial({ color: 0x3f9ed0, transparent: true, opacity: 0.88 })
       );
       pool.position.y = 0.24; g.add(pool);
       // Coping band
       const coping = new T.Mesh(
         new T.BoxGeometry(11.6, 0.28, 7.6),
-        new T.MeshLambertMaterial({ color: 0xe8e0c8 })
+        new T.MeshStandardMaterial({ color: 0xe8e0c8 })
       );
       coping.position.y = 0.235; g.add(coping);
       pool.position.y = 0.25;
@@ -1984,12 +2094,12 @@ const PLACEABLES = {
       const g = new T.Group();
       const shell = new T.Mesh(
         new T.CylinderGeometry(1.8, 1.8, 1.2, 16),
-        new T.MeshLambertMaterial({ color: 0x3a3530 })
+        new T.MeshStandardMaterial({ color: 0x3a3530 })
       );
       shell.position.y = 0.6; shell.castShadow = true; g.add(shell);
       const water = new T.Mesh(
         new T.CylinderGeometry(1.55, 1.55, 0.1, 16),
-        new T.MeshLambertMaterial({ color: 0x4fa8c8, transparent: true, opacity: 0.8 })
+        new T.MeshStandardMaterial({ color: 0x4fa8c8, transparent: true, opacity: 0.8 })
       );
       water.position.y = 1.15; g.add(water);
       return g;
@@ -2001,12 +2111,12 @@ const PLACEABLES = {
       const g = new T.Group();
       const ring = new T.Mesh(
         new T.CylinderGeometry(1.5, 1.6, 0.65, 16),
-        new T.MeshLambertMaterial({ color: 0x554f46 })
+        new T.MeshStandardMaterial({ color: 0x554f46 })
       );
       ring.position.y = 0.325; ring.castShadow = true; ring.receiveShadow = true; g.add(ring);
       const inner = new T.Mesh(
         new T.CylinderGeometry(1.12, 1.12, 0.6, 16),
-        new T.MeshLambertMaterial({ color: 0x1a1612 })
+        new T.MeshStandardMaterial({ color: 0x1a1612 })
       );
       inner.position.y = 0.37; g.add(inner);
       const fire = new T.Mesh(
@@ -2018,7 +2128,7 @@ const PLACEABLES = {
       const glow = new T.PointLight(0xff6a20, 0.6, 6);
       glow.position.y = 0.8; g.add(glow);
       // Adirondack chairs around
-      const chairMat = new T.MeshLambertMaterial({ color: 0x5c3e28 });
+      const chairMat = new T.MeshStandardMaterial({ color: 0x5c3e28 });
       for (let i = 0; i < 4; i++) {
         const chair = new T.Group();
         const seat = new T.Mesh(new T.BoxGeometry(0.9, 0.12, 0.9), chairMat);
@@ -2038,8 +2148,8 @@ const PLACEABLES = {
     name: 'Pergola', category: 'Features', icon: '⌂', footprint: '12 × 10 ft',
     build: () => {
       const g = new T.Group();
-      const woodMat = new T.MeshLambertMaterial({ color: 0x7a5a3c });
-      const darkWood = new T.MeshLambertMaterial({ color: 0x5a4028 });
+      const woodMat = new T.MeshStandardMaterial({ color: 0x7a5a3c });
+      const darkWood = new T.MeshStandardMaterial({ color: 0x5a4028 });
       const w = 6, d = 5, h = 3;
       [[w, -d], [w, d], [-w, -d], [-w, d]].forEach(([x, z]) => {
         const p = new T.Mesh(new T.BoxGeometry(0.3, h, 0.3), darkWood);
@@ -2060,8 +2170,8 @@ const PLACEABLES = {
     name: 'Gazebo', category: 'Features', icon: '⬡', footprint: '10 ft hexagon',
     build: () => {
       const g = new T.Group();
-      const postMat = new T.MeshLambertMaterial({ color: 0xe8e1cc });
-      const roofMat = new T.MeshLambertMaterial({ color: 0x5b4638 });
+      const postMat = new T.MeshStandardMaterial({ color: 0xe8e1cc });
+      const roofMat = new T.MeshStandardMaterial({ color: 0x5b4638 });
       const radius = 2.5, h = 2.8;
       for (let i = 0; i < 6; i++) {
         const a = (i / 6) * Math.PI * 2;
@@ -2083,9 +2193,9 @@ const PLACEABLES = {
     name: 'Outdoor Kitchen', category: 'Features', icon: '🍳', footprint: '8 × 2 ft',
     build: () => {
       const g = new T.Group();
-      const baseMat = new T.MeshLambertMaterial({ color: 0x3d3832 });
-      const counterMat = new T.MeshLambertMaterial({ color: 0x20201c });
-      const steelMat = new T.MeshLambertMaterial({ color: 0x8a8a8a });
+      const baseMat = new T.MeshStandardMaterial({ color: 0x3d3832 });
+      const counterMat = new T.MeshStandardMaterial({ color: 0x20201c });
+      const steelMat = new T.MeshStandardMaterial({ color: 0x8a8a8a });
       const base = new T.Mesh(new T.BoxGeometry(5, 1.55, 1.3), baseMat);
       base.position.y = 0.775; base.castShadow = true; base.receiveShadow = true; g.add(base);
       const counter = new T.Mesh(new T.BoxGeometry(5.2, 0.12, 1.4), counterMat);
@@ -2101,7 +2211,7 @@ const PLACEABLES = {
     name: 'Garden Bench', category: 'Features', icon: '🪑', footprint: 'Seats 2–3',
     build: () => {
       const g = new T.Group();
-      const mat = new T.MeshLambertMaterial({ color: 0x5a4028 });
+      const mat = new T.MeshStandardMaterial({ color: 0x5a4028 });
       const seat = new T.Mesh(new T.BoxGeometry(2.6, 0.14, 0.65), mat);
       seat.position.y = 0.55; seat.castShadow = true; g.add(seat);
       const back = new T.Mesh(new T.BoxGeometry(2.6, 0.75, 0.1), mat);
@@ -2121,7 +2231,7 @@ const PLACEABLES = {
       const g = new T.Group();
       const s = new T.Mesh(
         new T.CylinderGeometry(0.55, 0.55, 0.08, 8),
-        new T.MeshLambertMaterial({ color: 0xa89e82 })
+        new T.MeshStandardMaterial({ color: 0xa89e82 })
       );
       s.scale.x = 1 + Math.random() * 0.2;
       s.position.y = 0.04;
@@ -2132,7 +2242,7 @@ const PLACEABLES = {
     },
     build: () => {
       const g = new T.Group();
-      const mat = new T.MeshLambertMaterial({ color: 0xa89e82 });
+      const mat = new T.MeshStandardMaterial({ color: 0xa89e82 });
       for (let i = 0; i < 5; i++) {
         const s = new T.Mesh(
           new T.CylinderGeometry(0.55, 0.55, 0.08, 8),
@@ -2153,12 +2263,12 @@ const PLACEABLES = {
       const g = new T.Group();
       const pot = new T.Mesh(
         new T.CylinderGeometry(0.7, 0.5, 1.1, 12),
-        new T.MeshLambertMaterial({ color: 0x8d7460 })
+        new T.MeshStandardMaterial({ color: 0x8d7460 })
       );
       pot.position.y = 0.55; pot.castShadow = true; pot.receiveShadow = true; g.add(pot);
       const plant = new T.Mesh(
         new T.IcosahedronGeometry(0.8, 0),
-        new T.MeshLambertMaterial({ color: 0x5c8540 })
+        new T.MeshStandardMaterial({ color: 0x5c8540 })
       );
       plant.position.y = 1.55; plant.castShadow = true; g.add(plant);
       return g;
@@ -2168,8 +2278,8 @@ const PLACEABLES = {
     name: 'Swing Set', category: 'Features', icon: '🛝', footprint: '8 × 4 ft',
     build: () => {
       const g = new T.Group();
-      const frameMat = new T.MeshLambertMaterial({ color: 0xa84830 });
-      const seatMat = new T.MeshLambertMaterial({ color: 0x2a2220 });
+      const frameMat = new T.MeshStandardMaterial({ color: 0xa84830 });
+      const seatMat = new T.MeshStandardMaterial({ color: 0x2a2220 });
       // A-frames
       [-2, 2].forEach(x => {
         const a1 = new T.Mesh(new T.CylinderGeometry(0.08, 0.08, 3.2), frameMat);
@@ -2188,7 +2298,7 @@ const PLACEABLES = {
         // Rope hints
         const rope = new T.Mesh(
           new T.CylinderGeometry(0.02, 0.02, 1.6),
-          new T.MeshLambertMaterial({ color: 0x333333 })
+          new T.MeshStandardMaterial({ color: 0x333333 })
         );
         rope.position.set(x, 2.13, 0); g.add(rope);
       });
@@ -2201,11 +2311,11 @@ const PLACEABLES = {
       const g = new T.Group();
       const turf = new T.Mesh(
         new T.BoxGeometry(8, 0.08, 5),
-        new T.MeshLambertMaterial({ color: 0x6b9a4a })
+        new T.MeshStandardMaterial({ color: 0x6b9a4a })
       );
       turf.position.y = 0.04; turf.receiveShadow = true; g.add(turf);
       // Border
-      const borderMat = new T.MeshLambertMaterial({ color: 0x5a4028 });
+      const borderMat = new T.MeshStandardMaterial({ color: 0x5a4028 });
       [[4, 0, 0, 5.2], [-4, 0, 0, 5.2], [0, 0, 2.5, 8.2], [0, 0, -2.5, 8.2]].forEach(([x, y, z, w]) => {
         const horiz = Math.abs(x) > 0.1;
         const b = new T.Mesh(
@@ -2217,7 +2327,7 @@ const PLACEABLES = {
       // Tennis ball
       const ball = new T.Mesh(
         new T.SphereGeometry(0.18, 8, 6),
-        new T.MeshLambertMaterial({ color: 0xd4e85a })
+        new T.MeshStandardMaterial({ color: 0xd4e85a })
       );
       ball.position.set(1.5, 0.26, -0.5); g.add(ball);
       return g;
@@ -2229,11 +2339,11 @@ const PLACEABLES = {
       const g = new T.Group();
       const bed = new T.Mesh(
         new T.BoxGeometry(6, 0.12, 3),
-        new T.MeshLambertMaterial({ color: 0x3d2b1f })
+        new T.MeshStandardMaterial({ color: 0x3d2b1f })
       );
       bed.position.y = 0.06; bed.receiveShadow = true; g.add(bed);
-      const foliageMat = new T.MeshLambertMaterial({ color: 0x4a7a3a, flatShading: true });
-      const flowerMat = new T.MeshLambertMaterial({ color: 0xe8efc8 });
+      const foliageMat = new T.MeshStandardMaterial({ color: 0x4a7a3a, flatShading: true });
+      const flowerMat = new T.MeshStandardMaterial({ color: 0xe8efc8 });
       for (let i = -1; i <= 1; i++) {
         const x = i * 1.7;
         const fol = new T.Mesh(new T.IcosahedronGeometry(0.85, 1), foliageMat);
@@ -2258,8 +2368,8 @@ const PLACEABLES = {
     build: () => {
       const g = new T.Group();
       // Two silvery-green tones to break up the smooth blob
-      const folA = new T.MeshLambertMaterial({ color: 0x95a87f, flatShading: true });
-      const folB = new T.MeshLambertMaterial({ color: 0xb0bf95, flatShading: true });
+      const folA = new T.MeshStandardMaterial({ color: 0x95a87f, flatShading: true });
+      const folB = new T.MeshStandardMaterial({ color: 0xb0bf95, flatShading: true });
       // Wide low sprawl — 10 small clumps in an elongated mound
       const clumps = 10;
       for (let i = 0; i < clumps; i++) {
@@ -2278,7 +2388,7 @@ const PLACEABLES = {
         g.add(b);
       }
       // Lavender flower flecks scattered across the top
-      const flowerMat = new T.MeshLambertMaterial({ color: 0xb89bd6 });
+      const flowerMat = new T.MeshStandardMaterial({ color: 0xb89bd6 });
       for (let i = 0; i < 20; i++) {
         const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
         f.position.set(
@@ -2300,9 +2410,9 @@ const PLACEABLES = {
       const g = new T.Group();
       outer.add(g);
       outer.scale.setScalar(5);
-      const woodMat = new T.MeshLambertMaterial({ color: 0x5a4028 });
-      const leafMat = new T.MeshLambertMaterial({ color: 0x355d2e, flatShading: true });
-      const orangeMat = new T.MeshLambertMaterial({ color: 0xe08a2e });
+      const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028 });
+      const leafMat = new T.MeshStandardMaterial({ color: 0x355d2e, flatShading: true });
+      const orangeMat = new T.MeshStandardMaterial({ color: 0xe08a2e });
 
       // Trunk
       const trunk = new T.Mesh(
@@ -2380,8 +2490,8 @@ const PLACEABLES = {
     footprint: 'Perennial · purple flower spikes',
     build: () => {
       const g = new T.Group();
-      const folMat = new T.MeshLambertMaterial({ color: 0x4a7a3a, flatShading: true });
-      const folMatHi = new T.MeshLambertMaterial({ color: 0x6b9852, flatShading: true });
+      const folMat = new T.MeshStandardMaterial({ color: 0x4a7a3a, flatShading: true });
+      const folMatHi = new T.MeshStandardMaterial({ color: 0x6b9852, flatShading: true });
       // Dense low foliage base — 8 clumps
       for (let i = 0; i < 8; i++) {
         const s = 0.22 + Math.random() * 0.14;
@@ -2396,9 +2506,9 @@ const PLACEABLES = {
         g.add(b);
       }
       // 16 vertical purple flower spikes with little flower bumps at the top
-      const spikeStem = new T.MeshLambertMaterial({ color: 0x4a6840 });
-      const spikeBract = new T.MeshLambertMaterial({ color: 0x6b4e9e });
-      const spikeTip = new T.MeshLambertMaterial({ color: 0x9e7ed0 });
+      const spikeStem = new T.MeshStandardMaterial({ color: 0x4a6840 });
+      const spikeBract = new T.MeshStandardMaterial({ color: 0x6b4e9e });
+      const spikeTip = new T.MeshStandardMaterial({ color: 0x9e7ed0 });
       for (let i = 0; i < 16; i++) {
         const x = (Math.random() - 0.5) * 0.95;
         const z = (Math.random() - 0.5) * 0.95;
@@ -2435,7 +2545,7 @@ const PLACEABLES = {
       // Cream base
       const base = new T.Mesh(
         new T.BoxGeometry(6, 0.06, 3),
-        new T.MeshLambertMaterial({ color: 0xdfd2b4 })
+        new T.MeshStandardMaterial({ color: 0xdfd2b4 })
       );
       base.position.y = 0.03; base.receiveShadow = true;
       g.add(base);
@@ -2447,7 +2557,7 @@ const PLACEABLES = {
         const c = rockColors[Math.floor(Math.random() * rockColors.length)];
         const r = new T.Mesh(
           new T.IcosahedronGeometry(s, 0),
-          new T.MeshLambertMaterial({ color: c, flatShading: true })
+          new T.MeshStandardMaterial({ color: c, flatShading: true })
         );
         r.position.set(
           (Math.random() - 0.5) * 5.7,
@@ -2467,9 +2577,9 @@ const PLACEABLES = {
     footprint: 'Scale reference',
     build: () => {
       const g = new T.Group();
-      const skin = new T.MeshLambertMaterial({ color: 0xd9a87a });
-      const shirt = new T.MeshLambertMaterial({ color: 0x4a6e8a });
-      const pants = new T.MeshLambertMaterial({ color: 0x2a3140 });
+      const skin = new T.MeshStandardMaterial({ color: 0xd9a87a });
+      const shirt = new T.MeshStandardMaterial({ color: 0x4a6e8a });
+      const pants = new T.MeshStandardMaterial({ color: 0x2a3140 });
       // Body: head + torso + legs. Total height ≈ 5.83 ft (5'10").
       const head = new T.Mesh(new T.SphereGeometry(0.42, 12, 10), skin);
       head.position.y = 5.4; head.castShadow = true; g.add(head);
@@ -2510,7 +2620,7 @@ const PLACEABLES = {
         geom.rotateX(-Math.PI / 2); // extrude becomes vertical; shape-y → world-Z
         const b = new T.Mesh(
           geom,
-          new T.MeshLambertMaterial({ color: palette[i % palette.length] })
+          new T.MeshStandardMaterial({ color: palette[i % palette.length] })
         );
         b.position.set(-len / 2 + blockL * (i + 0.5), 0, 0);
         b.receiveShadow = true; b.castShadow = true;
@@ -2524,12 +2634,12 @@ const PLACEABLES = {
     build: () => {
       const g = new T.Group();
       const W = 36, D = 26, H = 11, roofH = 4.5;
-      const wallMat   = new T.MeshLambertMaterial({ color: 0xe8d8b8 });
-      const roofMat   = new T.MeshLambertMaterial({ color: 0x6b4a3a });
-      const trimMat   = new T.MeshLambertMaterial({ color: 0xf5ede0 });
-      const windowMat = new T.MeshLambertMaterial({ color: 0x506a82, emissive: 0x1a2030 });
-      const doorMat   = new T.MeshLambertMaterial({ color: 0x4a3828 });
-      const stoneMat  = new T.MeshLambertMaterial({ color: 0x8a8275 });
+      const wallMat   = new T.MeshStandardMaterial({ color: 0xe8d8b8 });
+      const roofMat   = new T.MeshStandardMaterial({ color: 0x6b4a3a });
+      const trimMat   = new T.MeshStandardMaterial({ color: 0xf5ede0 });
+      const windowMat = new T.MeshStandardMaterial({ color: 0x506a82, emissive: 0x1a2030, roughness: 0.18, metalness: 0.55 });
+      const doorMat   = new T.MeshStandardMaterial({ color: 0x4a3828 });
+      const stoneMat  = new T.MeshStandardMaterial({ color: 0x8a8275, map: stoneTex, roughness: 0.9, metalness: 0 });
 
       // Foundation slab
       const found = new T.Mesh(new T.BoxGeometry(W + 0.4, 0.5, D + 0.4), stoneMat);
@@ -2603,9 +2713,9 @@ const PLACEABLES = {
     build: () => {
       const g = new T.Group();
       // Two shades of dark glossy green for the layered foliage look
-      const folA = new T.MeshLambertMaterial({ color: 0x2d4d2a, flatShading: true });
-      const folB = new T.MeshLambertMaterial({ color: 0x416a3b, flatShading: true });
-      const flowerMat = new T.MeshLambertMaterial({ color: 0xefe9d6 });
+      const folA = new T.MeshStandardMaterial({ color: 0x2d4d2a, flatShading: true });
+      const folB = new T.MeshStandardMaterial({ color: 0x416a3b, flatShading: true });
+      const flowerMat = new T.MeshStandardMaterial({ color: 0xefe9d6 });
       // Upright column form: 3 vertical layers, each with several clumps
       for (let layer = 0; layer < 3; layer++) {
         const yBase = 0.4 + layer * 1.4;
@@ -2649,11 +2759,11 @@ const PLACEABLES = {
     footprint: 'Cascading magenta vine · 6–8 ft',
     build: () => {
       const g = new T.Group();
-      const woodMat = new T.MeshLambertMaterial({ color: 0x5a4028 });
-      const folMat = new T.MeshLambertMaterial({ color: 0x3e6a36, flatShading: true });
-      const folMatLi = new T.MeshLambertMaterial({ color: 0x5a8a48, flatShading: true });
-      const bractA = new T.MeshLambertMaterial({ color: 0xc4377d, side: T.DoubleSide });
-      const bractB = new T.MeshLambertMaterial({ color: 0xe04a8e, side: T.DoubleSide });
+      const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028 });
+      const folMat = new T.MeshStandardMaterial({ color: 0x3e6a36, flatShading: true });
+      const folMatLi = new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true });
+      const bractA = new T.MeshStandardMaterial({ color: 0xc4377d, side: T.DoubleSide });
+      const bractB = new T.MeshStandardMaterial({ color: 0xe04a8e, side: T.DoubleSide });
       // Multi-stem woody trunk hint
       const trunk = new T.Mesh(
         new T.CylinderGeometry(0.18, 0.32, 1.4, 6),
@@ -2713,13 +2823,13 @@ const PLACEABLES = {
       const g = new T.Group();
       const pot = new T.Mesh(
         new T.CylinderGeometry(0.55, 0.4, 0.85, 14),
-        new T.MeshLambertMaterial({ color: 0xa0846a })
+        new T.MeshStandardMaterial({ color: 0xa0846a })
       );
       pot.position.y = 0.43; pot.castShadow = true; pot.receiveShadow = true;
       g.add(pot);
       const plant = new T.Mesh(
         new T.IcosahedronGeometry(0.55, 1),
-        new T.MeshLambertMaterial({ color: 0x5c8540, flatShading: true })
+        new T.MeshStandardMaterial({ color: 0x5c8540, flatShading: true })
       );
       plant.position.y = 1.15; plant.castShadow = true;
       g.add(plant);
@@ -2733,19 +2843,19 @@ const PLACEABLES = {
       const g = new T.Group();
       const box = new T.Mesh(
         new T.BoxGeometry(3, 0.95, 1),
-        new T.MeshLambertMaterial({ color: 0x968067 })
+        new T.MeshStandardMaterial({ color: 0x968067 })
       );
       box.position.y = 0.475; box.castShadow = true; box.receiveShadow = true;
       g.add(box);
       // Dark soil rim
       const soil = new T.Mesh(
         new T.BoxGeometry(2.85, 0.06, 0.9),
-        new T.MeshLambertMaterial({ color: 0x1f1610 })
+        new T.MeshStandardMaterial({ color: 0x1f1610 })
       );
       soil.position.y = 0.95;
       g.add(soil);
       // Three plant clumps along the length
-      const folMat = new T.MeshLambertMaterial({ color: 0x4a7a3a, flatShading: true });
+      const folMat = new T.MeshStandardMaterial({ color: 0x4a7a3a, flatShading: true });
       for (let i = 0; i < 3; i++) {
         const fol = new T.Mesh(new T.IcosahedronGeometry(0.42, 1), folMat);
         fol.position.set(-1 + i * 1.0, 1.35, 0);
@@ -2760,10 +2870,10 @@ const PLACEABLES = {
     footprint: '8 × 6 × 7 ft, gabled',
     build: () => {
       const g = new T.Group();
-      const wallMat = new T.MeshLambertMaterial({ color: 0x8a6e4d });
-      const roofMat = new T.MeshLambertMaterial({ color: 0x4a3530 });
-      const trimMat = new T.MeshLambertMaterial({ color: 0xe6dcc4 });
-      const doorMat = new T.MeshLambertMaterial({ color: 0x3a2a1c });
+      const wallMat = new T.MeshStandardMaterial({ color: 0x8a6e4d });
+      const roofMat = new T.MeshStandardMaterial({ color: 0x4a3530 });
+      const trimMat = new T.MeshStandardMaterial({ color: 0xe6dcc4 });
+      const doorMat = new T.MeshStandardMaterial({ color: 0x3a2a1c });
       const W = 8, D = 6, H = 6, roofH = 1.6;
       // Walls
       const walls = new T.Mesh(new T.BoxGeometry(W, H, D), wallMat);
