@@ -1170,13 +1170,14 @@
   <span class="cam-divider"></span>
   <button class="cam-btn" id="snap-btn" aria-pressed="false">Snap</button>
   <button class="cam-btn" id="measure-btn" aria-pressed="false">Measure</button>
+  <button class="cam-btn" id="walk-btn" aria-pressed="false">Walk</button>
 </div>
 
 <div id="scale-bar">
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v63</div>
+<div id="version">v64</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2848,8 +2849,10 @@ function refreshModeBadge() {
   const iconEl = document.getElementById('mode-icon');
   const labelEl = document.getElementById('mode-label');
   let icon = null, label = null;
-  // Priority: edit boundary > path > placement > multi-select
-  if (typeof yardEditMode !== 'undefined' && yardEditMode) {
+  // Priority: walk > edit boundary > path > placement > multi-select
+  if (typeof walkMode !== 'undefined' && walkMode) {
+    icon = '🚶'; label = 'Walk · drag to look · tap to walk';
+  } else if (typeof yardEditMode !== 'undefined' && yardEditMode) {
     icon = '📐'; label = 'Edit boundary';
   } else if (typeof pathMode !== 'undefined' && pathMode && selectedKind) {
     const def = PLACEABLES[selectedKind];
@@ -2871,6 +2874,10 @@ function refreshModeBadge() {
 }
 
 document.getElementById('mode-close').addEventListener('click', () => {
+  if (typeof walkMode !== 'undefined' && walkMode) {
+    exitWalkMode();
+    return;
+  }
   if (typeof yardEditMode !== 'undefined' && yardEditMode) {
     exitYardEdit(true);
     return;
@@ -3594,6 +3601,82 @@ function addMeasurePoint(x, z) {
 
 document.getElementById('measure-btn').addEventListener('click', () => setMeasureMode(!measureMode));
 
+// ============================================================
+// Walk mode — first-person tour at 5'10" eye height.
+// Drag = look around, tap on yard ground = walk to that spot.
+// ============================================================
+let _walkTeleportRAF = null;
+function enterWalkMode() {
+  if (walkMode) return;
+  // Mutually-exclusive with placement / measure / multi-select / yard-edit
+  if (measureMode) setMeasureMode(false);
+  clearPaletteSelection();
+  selectItem(null);
+  // Stash the orbital camera so Exit restores it cleanly
+  _savedCamForWalk = {
+    theta: cam.theta, phi: cam.phi, radius: cam.radius, target: target.clone()
+  };
+  // Start the user standing where the orbital target was, facing the
+  // camera's previous viewing direction (so the world doesn't suddenly
+  // spin around them).
+  walkPos.set(target.x, 0, target.z);
+  // Camera was looking from offset spherical(theta, phi) toward target,
+  // so the view direction in XZ is opposite of (cos(theta), sin(theta)).
+  walkYaw = cam.theta + Math.PI;
+  walkPitch = -0.06;
+  walkMode = true;
+  updateCam();
+  document.getElementById('walk-btn').classList.add('active');
+  document.getElementById('walk-btn').setAttribute('aria-pressed', 'true');
+  refreshModeBadge();
+  toast('Walk mode · drag to look · tap to walk');
+}
+function exitWalkMode() {
+  if (!walkMode) return;
+  walkMode = false;
+  if (_walkTeleportRAF !== null) { cancelAnimationFrame(_walkTeleportRAF); _walkTeleportRAF = null; }
+  if (_savedCamForWalk) {
+    cam.theta = _savedCamForWalk.theta;
+    cam.phi = _savedCamForWalk.phi;
+    cam.radius = _savedCamForWalk.radius;
+    target.copy(_savedCamForWalk.target);
+    _savedCamForWalk = null;
+  }
+  updateCam();
+  document.getElementById('walk-btn').classList.remove('active');
+  document.getElementById('walk-btn').setAttribute('aria-pressed', 'false');
+  refreshModeBadge();
+}
+function teleportWalkTo(x, z) {
+  if (_walkTeleportRAF !== null) cancelAnimationFrame(_walkTeleportRAF);
+  const sx = walkPos.x, sz = walkPos.z;
+  // Face the destination during the walk
+  const targetYaw = Math.atan2(z - sz, x - sx);
+  // Shortest-path interpolation for yaw
+  let dy = targetYaw - walkYaw;
+  while (dy >  Math.PI) dy -= 2 * Math.PI;
+  while (dy < -Math.PI) dy += 2 * Math.PI;
+  const startYaw = walkYaw;
+  const t0 = performance.now();
+  const dist = Math.hypot(x - sx, z - sz);
+  const dur = Math.min(1500, Math.max(350, dist * 60)); // ~60ms/ft
+  const step = () => {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    walkPos.x = sx + (x - sx) * e;
+    walkPos.z = sz + (z - sz) * e;
+    walkYaw = startYaw + dy * Math.min(1, e * 1.5); // turn faster than walk
+    updateCam();
+    if (k < 1) _walkTeleportRAF = requestAnimationFrame(step);
+    else _walkTeleportRAF = null;
+  };
+  _walkTeleportRAF = requestAnimationFrame(step);
+  haptic(10);
+}
+document.getElementById('walk-btn').addEventListener('click', () => {
+  walkMode ? exitWalkMode() : enterWalkMode();
+});
+
 function deleteSelected() {
   // Bulk-aware: deletes everything in selectionSet (which always includes
   // primary selection if there is one).
@@ -3829,7 +3912,29 @@ function toast(msg) {
 const target = new T.Vector3(0, 1, 18);
 const cam = { radius: 60, theta: Math.PI * 0.5, phi: Math.PI * 0.18 };
 
+// ============================================================
+// Walk mode — first-person camera at 5'10" eye height. Bypasses the
+// orbital math; camera position is set directly from walkPos and
+// look direction is built from walkYaw / walkPitch.
+// ============================================================
+const WALK_EYE_HEIGHT = 5.83; // 5'10" in feet
+let walkMode = false;
+let walkPos = new T.Vector3(0, 0, 18);
+let walkYaw = -Math.PI / 2;   // 0 = +X (east). -π/2 = -Z (north — toward back of yard)
+let walkPitch = -0.05;
+let _savedCamForWalk = null;
+
+function updateWalkCamera() {
+  camera.position.set(walkPos.x, WALK_EYE_HEIGHT, walkPos.z);
+  const cy = Math.cos(walkPitch);
+  const fx = cy * Math.cos(walkYaw);
+  const fy = Math.sin(walkPitch);
+  const fz = cy * Math.sin(walkYaw);
+  camera.lookAt(walkPos.x + fx, WALK_EYE_HEIGHT + fy, walkPos.z + fz);
+}
+
 function updateCam() {
+  if (walkMode) { updateWalkCamera(); return; }
   const x = cam.radius * Math.sin(cam.phi) * Math.cos(cam.theta);
   const y = cam.radius * Math.cos(cam.phi);
   const z = cam.radius * Math.sin(cam.phi) * Math.sin(cam.theta);
@@ -3848,6 +3953,10 @@ canvas.addEventListener('mousedown', e => {
   lastMouse = { x: e.clientX, y: e.clientY };
   dragStart = { x: e.clientX, y: e.clientY, t: performance.now() };
   didDrag = false;
+  if (walkMode) {
+    if (e.button === 0) mouseState = 'walk';
+    return;
+  }
   // Yard-edit mode: clicking on a handle starts a drag, anything else is no-op.
   if (yardEditMode) {
     const h = pickYardHandle(e);
@@ -3877,6 +3986,15 @@ canvas.addEventListener('mousedown', e => {
 });
 
 window.addEventListener('mouseup', e => {
+  if (walkMode) {
+    // In walk mode, a click without drag = teleport-walk to the tapped point.
+    if (mouseState === 'walk' && !didDrag) {
+      const pt = groundPick(e);
+      if (pt) teleportWalkTo(pt.x, pt.z);
+    }
+    mouseState = null;
+    return;
+  }
   if (yardEditMode) { yardEditDrag = null; return; }
   if (!mouseState) return;
   canvas.classList.remove('panning');
@@ -3925,6 +4043,19 @@ window.addEventListener('mouseup', e => {
 });
 
 canvas.addEventListener('mousemove', e => {
+  if (walkMode) {
+    if (mouseState !== 'walk') return;
+    const dx = e.clientX - lastMouse.x, dy = e.clientY - lastMouse.y;
+    if (!didDrag && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 3) {
+      didDrag = true;
+    }
+    walkYaw += dx * 0.005;
+    walkPitch -= dy * 0.005;
+    walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
+    updateCam();
+    lastMouse = { x: e.clientX, y: e.clientY };
+    return;
+  }
   if (yardEditMode) {
     if (yardEditDrag) dragYardHandle(e);
     return;
@@ -4066,6 +4197,16 @@ const LOCK_DOMINANCE = 1.2; // winner must be this much over the runner-up
 
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
+  if (walkMode) {
+    if (e.touches.length === 1) {
+      const t = e.touches[0];
+      lastMouse = { x: t.clientX, y: t.clientY };
+      dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+      didDrag = false;
+      touchState = 'walk';
+    }
+    return;
+  }
   if (yardEditMode) {
     if (e.touches.length === 1) {
       const t = e.touches[0];
@@ -4110,6 +4251,20 @@ canvas.addEventListener('touchstart', e => {
 
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
+  if (walkMode) {
+    if (touchState !== 'walk' || e.touches.length !== 1) return;
+    const t = e.touches[0];
+    const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
+    if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) {
+      didDrag = true;
+    }
+    walkYaw += dx * 0.005;
+    walkPitch -= dy * 0.005;
+    walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
+    updateCam();
+    lastMouse = { x: t.clientX, y: t.clientY };
+    return;
+  }
   if (yardEditMode) {
     if (yardEditDrag && e.touches.length === 1) dragYardHandle(e.touches[0]);
     return;
@@ -4234,6 +4389,15 @@ canvas.addEventListener('touchmove', e => {
 }, { passive: false });
 
 canvas.addEventListener('touchend', e => {
+  if (walkMode) {
+    if (touchState === 'walk' && !didDrag && e.touches.length === 0 && e.changedTouches.length === 1) {
+      const t = e.changedTouches[0];
+      const pt = groundPick(t);
+      if (pt) teleportWalkTo(pt.x, pt.z);
+    }
+    if (e.touches.length === 0) touchState = null;
+    return;
+  }
   if (yardEditMode) {
     if (e.touches.length === 0) yardEditDrag = null;
     return;
