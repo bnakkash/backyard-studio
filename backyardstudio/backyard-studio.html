@@ -1177,7 +1177,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v71</div>
+<div id="version">v72</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -4074,8 +4074,8 @@ canvas.addEventListener('mousemove', e => {
     if (!didDrag && Math.hypot(e.clientX - dragStart.x, e.clientY - dragStart.y) > 3) {
       didDrag = true;
     }
-    walkYaw -= dx * 0.003;
-    walkPitch += dy * 0.003;
+    walkYaw -= dx * 0.0045;
+    walkPitch += dy * 0.0018;
     walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
     updateCam();
     lastMouse = { x: e.clientX, y: e.clientY };
@@ -4316,8 +4316,8 @@ canvas.addEventListener('touchmove', e => {
     if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) {
       didDrag = true;
     }
-    walkYaw -= dx * 0.003;
-    walkPitch += dy * 0.003;
+    walkYaw -= dx * 0.0045;
+    walkPitch += dy * 0.0018;
     walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
     updateCam();
     lastMouse = { x: t.clientX, y: t.clientY };
