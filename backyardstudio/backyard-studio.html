@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v84</div>
+<div id="version">v85</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2570,35 +2570,54 @@ const PLACEABLES = {
   },
   paver_trim: {
     name: 'Trapezoidal Paver Trim', category: 'Hardscape', icon: '▭',
-    footprint: '6 ft trapezoidal trim · path-eligible',
-    pathStep: 6,
-    build: () => {
-      // Each block is a trapezoid in plan: wider on the +Z (outer) edge,
-      // narrower on the -Z (inner) edge so the row of blocks fits naturally
-      // along curved paths. Long axis runs along X (matches path placement).
+    footprint: 'Trapezoidal trim · tap waypoints',
+    // Effective length consumed per block = blockL − slant. Adjacent blocks
+    // share their slanted ends (one's right slant IS the next one's left
+    // slant), which is what makes the pattern fit a curve naturally.
+    pathStep: 1.05,
+    pathBuild: (i) => {
       const g = new T.Group();
-      const len = 6, blockL = 0.6;
-      const numBlocks = Math.floor(len / blockL);
+      const blockL = 1.2;       // block length along the path
+      const slant  = 0.15;      // length absorbed by each slanted end
+      const w      = 0.30;      // half-width perpendicular to path
+      const halfL  = blockL / 2;
+      const idx    = i || 0;
       const palette = [0xc4b395, 0xb29a78, 0xd6c4a4, 0xa89476];
-      for (let i = 0; i < numBlocks; i++) {
-        const shape = new T.Shape();
-        const halfL  = (blockL - 0.04) / 2;
-        const wOuter = 0.32;  // outer half-width
-        const wInner = 0.20;  // inner half-width
-        shape.moveTo(-halfL, -wInner);
-        shape.lineTo( halfL, -wInner);
-        shape.lineTo( halfL,  wOuter);
-        shape.lineTo(-halfL,  wOuter);
-        shape.closePath();
-        const geom = new T.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
-        geom.rotateX(-Math.PI / 2); // extrude becomes vertical; shape-y → world-Z
-        const b = new T.Mesh(
-          geom,
-          new T.MeshStandardMaterial({ color: palette[i % palette.length] })
-        );
-        b.position.set(-len / 2 + blockL * (i + 0.5), 0, 0);
-        b.receiveShadow = true; b.castShadow = true;
-        g.add(b);
+      // Trapezoid in plan: long edge along Z=-w (bottom), short edge along
+      // Z=+w (top). The slants on each end consume `slant` of length on the
+      // top side. Rotating odd blocks 180° around Y mirrors which side the
+      // long/short edges land on, so adjacent blocks' slanted ends mate.
+      const shape = new T.Shape();
+      shape.moveTo(-halfL,         -w);
+      shape.lineTo( halfL,         -w);
+      shape.lineTo( halfL - slant,  w);
+      shape.lineTo(-halfL + slant,  w);
+      shape.closePath();
+      const geom = new T.ExtrudeGeometry(shape, { depth: 0.12, bevelEnabled: false });
+      geom.rotateX(-Math.PI / 2); // shape-y → world-Z
+      const b = new T.Mesh(
+        geom,
+        new T.MeshStandardMaterial({
+          color: palette[idx % palette.length],
+          map: stoneTex, roughness: 0.85, metalness: 0
+        })
+      );
+      // Alternate orientation so the slanted sides interlock.
+      if (idx % 2 === 1) b.rotation.y = Math.PI;
+      b.position.y = 0.06;
+      b.receiveShadow = true; b.castShadow = true;
+      g.add(b);
+      return g;
+    },
+    // Tap-place fallback: drop a 4-block sample so the user can see what
+    // it looks like even without entering path mode.
+    build: () => {
+      const g = new T.Group();
+      const stepLen = 1.05;
+      for (let i = 0; i < 4; i++) {
+        const block = PLACEABLES.paver_trim.pathBuild(i);
+        block.position.x = (i - 1.5) * stepLen;
+        g.add(block);
       }
       return g;
     }
@@ -3249,7 +3268,9 @@ function pathPlace(kind, x, z) {
     const pt = curve.getPointAt(t);
     const tan = curve.getTangentAt(t);
     const angle = Math.atan2(-tan.z, tan.x);
-    const mesh = builder();
+    // Pass index/total so path-aware builders (e.g. interlocking trapezoid
+    // trim) can alternate orientation, varied colors, etc.
+    const mesh = builder(i, count);
     mesh.position.set(pt.x, 0, pt.z);
     mesh.rotation.y = angle;
     mesh.add(makeContactShadow(mesh));
