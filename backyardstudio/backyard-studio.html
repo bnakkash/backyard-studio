@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v76</div>
+<div id="version">v77</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3657,6 +3657,12 @@ function enterWalkMode() {
   _walkTouches.clear();
   _walkActiveLookId = null;
   _walkAnyForwardEver = false;
+  // Wider FOV in walk mode — feels more like first-person standing in
+  // the yard, less like a telephoto lens. Stash the orbit FOV so we can
+  // restore exactly on exit.
+  _savedFov = camera.fov;
+  camera.fov = WALK_FOV;
+  camera.updateProjectionMatrix();
   walkMode = true;
   updateCam();
   document.getElementById('walk-btn').classList.add('active');
@@ -3675,6 +3681,12 @@ function exitWalkMode() {
   const zone = document.getElementById('walk-zones');
   if (zone) zone.classList.remove('show');
   if (_walkTeleportRAF !== null) { cancelAnimationFrame(_walkTeleportRAF); _walkTeleportRAF = null; }
+  // Restore orbit FOV.
+  if (_savedFov !== null) {
+    camera.fov = _savedFov;
+    camera.updateProjectionMatrix();
+    _savedFov = null;
+  }
   if (_savedCamForWalk) {
     cam.theta = _savedCamForWalk.theta;
     cam.phi = _savedCamForWalk.phi;
@@ -3964,6 +3976,8 @@ let walkYaw = -Math.PI / 2;   // 0 = +X (east). -π/2 = -Z (north — toward bac
 let walkPitch = -0.05;
 let walkSpeed = 0;            // ft/sec, eased toward target
 const WALK_MAX_SPEED = 6.5;   // ft/sec at full pace
+const WALK_FOV = 80;          // deg — wider than the 55° orbit FOV
+let _savedFov = null;         // orbit FOV stashed during walk mode
 // Screen-relative look sensitivity: matches mobile-FPS conventions so
 // drag distance feels the same on phone vs tablet. ~110° per full screen
 // width for yaw, ~65° per full screen height for pitch (the conventional
