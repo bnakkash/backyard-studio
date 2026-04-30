@@ -1,6 +1,6 @@
 // Backyard Studio service worker — offline support.
 // Bump CACHE when you ship a new HTML build so clients refresh.
-const CACHE = 'backyard-studio-v85';
+const CACHE = 'backyard-studio-v86';
 
 const PRECACHE = [
   './',
@@ -10,6 +10,9 @@ const PRECACHE = [
   './manifest.webmanifest',
   './icon.svg',
   './og-image.svg',
+  './og-image-v86.svg',
+  './media/yard-moodboard.svg',
+  './media/material-swatches.svg',
   'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js'
 ];
 

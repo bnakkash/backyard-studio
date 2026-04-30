@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630">
+  <defs>
+    <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
+      <stop offset="0%" stop-color="#d8e7f2"/>
+      <stop offset="56%" stop-color="#bfd5c8"/>
+      <stop offset="100%" stop-color="#9eb18a"/>
+    </linearGradient>
+    <radialGradient id="sunGlow" cx="78%" cy="22%" r="36%">
+      <stop offset="0%" stop-color="#ffe7ad" stop-opacity="0.9"/>
+      <stop offset="100%" stop-color="#ffe7ad" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="lawn" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#4f6f44"/>
+      <stop offset="100%" stop-color="#3f5c36"/>
+    </linearGradient>
+    <filter id="blur8"><feGaussianBlur stdDeviation="8"/></filter>
+    <filter id="shadow" x="-30%" y="-30%" width="160%" height="160%">
+      <feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#000" flood-opacity="0.25"/>
+    </filter>
+    <pattern id="pavers" width="44" height="24" patternUnits="userSpaceOnUse">
+      <rect width="44" height="24" fill="#8f826f"/>
+      <path d="M0 12H44M22 0V24" stroke="#7a6f5d" stroke-width="1"/>
+    </pattern>
+  </defs>
+
+  <rect width="1200" height="630" fill="url(#sky)"/>
+  <rect width="1200" height="630" fill="url(#sunGlow)"/>
+
+  <rect x="0" y="390" width="1200" height="240" fill="url(#lawn)"/>
+  <ellipse cx="600" cy="410" rx="360" ry="56" fill="#2d4028" opacity="0.32" filter="url(#blur8)"/>
+
+  <path d="M180 630 C290 565,420 540,540 560 C650 578,770 568,890 525 C960 500,1030 492,1110 500 L1200 630 Z"
+        fill="url(#pavers)" opacity="0.96"/>
+
+  <g transform="translate(750 255)" filter="url(#shadow)">
+    <rect x="30" y="88" width="330" height="180" fill="#e6dcc8"/>
+    <polygon points="0,88 390,88 280,-14 110,-14" fill="#564438"/>
+    <rect x="260" y="-38" width="26" height="120" fill="#d6cab1"/>
+    <rect x="74" y="132" width="72" height="80" fill="#5d7891"/>
+    <rect x="236" y="132" width="72" height="80" fill="#5d7891"/>
+    <rect x="166" y="168" width="56" height="100" fill="#c9b89a"/>
+  </g>
+
+  <g transform="translate(230 320)" filter="url(#shadow)">
+    <ellipse cx="18" cy="198" rx="124" ry="18" fill="#1f2e1f" opacity="0.35"/>
+    <ellipse cx="0" cy="-80" rx="170" ry="132" fill="#426f40"/>
+    <ellipse cx="-88" cy="-36" rx="108" ry="82" fill="#4f7f49"/>
+    <ellipse cx="98" cy="-54" rx="92" ry="74" fill="#5a8d4f"/>
+    <rect x="-24" y="22" width="50" height="176" rx="8" fill="#5b3f2b"/>
+  </g>
+
+  <g transform="translate(86 106)">
+    <circle cx="0" cy="-10" r="9" fill="#d4a574"/>
+    <text x="20" y="4" font-family="Georgia, 'Times New Roman', serif" font-size="70" font-weight="600" fill="#f3efe5">Backyard Studio</text>
+    <text x="2" y="56" font-family="ui-monospace, Menlo, monospace" font-size="20" fill="#d4a574" letter-spacing="6">3D LANDSCAPE PLANNER</text>
+    <text x="2" y="108" font-family="Georgia, serif" font-size="30" fill="#243322" opacity="0.78">Plan planting, hardscape, and sun in one view.</text>
+  </g>
+</svg>
