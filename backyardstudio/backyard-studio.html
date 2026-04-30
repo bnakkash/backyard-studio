@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v81</div>
+<div id="version">v82</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1481,27 +1481,28 @@ function nowAsHour() {
 // Ground textures (procedural grass)
 // ============================================================
 function makeGrassTexture(base, variation, density, repeat) {
+  // Render to a 512² canvas (4× the area of the previous 256², so the
+  // same speckle density looks finer), with NO repeating macro features
+  // like clumps/tufts — large structures expose the tile grid at
+  // top-down zoom. Just dense fine speckle = looks like grass at any scale.
+  const SIZE = 512;
   const c = document.createElement('canvas');
-  c.width = c.height = 256;
+  c.width = c.height = SIZE;
   const ctx = c.getContext('2d');
   ctx.fillStyle = base;
-  ctx.fillRect(0, 0, 256, 256);
-  for (let i = 0; i < density; i++) {
+  ctx.fillRect(0, 0, SIZE, SIZE);
+  // 4× the speckle to fill the 4× area at the same visual density
+  const N = density * 4;
+  for (let i = 0; i < N; i++) {
     const [r, g, b] = variation();
     ctx.fillStyle = `rgba(${r},${g},${b},0.55)`;
-    ctx.fillRect(Math.random() * 256, Math.random() * 256, 2, 2);
-  }
-  // Tufts: soft circular shadow/highlight blobs that break up the regular
-  // tiling and make the lawn read as having clumps and bare patches.
-  for (let i = 0; i < 18; i++) {
-    const x = Math.random() * 256, y = Math.random() * 256, r = 8 + Math.random() * 22;
-    const dark = Math.random() < 0.55;
-    ctx.fillStyle = dark ? 'rgba(40,60,30,0.18)' : 'rgba(160,190,120,0.15)';
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.fillRect(Math.random() * SIZE, Math.random() * SIZE, 2, 2);
   }
   const tex = new T.CanvasTexture(c);
   tex.wrapS = tex.wrapT = T.RepeatWrapping;
-  tex.repeat.set(repeat, repeat);
+  // Higher repeat = each tile covers a smaller patch of ground, so the
+  // grass looks finer-grained. The previous 7 was too coarse for top-down.
+  tex.repeat.set(repeat * 3, repeat * 3);
   // Critical for the PBR/sRGB pipeline — without this, color textures used
   // as `map` come out washed out because the renderer expects sRGB input.
   tex.encoding = T.sRGBEncoding;
