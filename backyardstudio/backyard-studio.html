@@ -1177,7 +1177,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v64</div>
+<div id="version">v65</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2851,7 +2851,7 @@ function refreshModeBadge() {
   let icon = null, label = null;
   // Priority: walk > edit boundary > path > placement > multi-select
   if (typeof walkMode !== 'undefined' && walkMode) {
-    icon = '🚶'; label = 'Walk · drag to look · tap to walk';
+    icon = '🚶'; label = 'Walk · drag to look · 2 fingers = forward · tap = teleport';
   } else if (typeof yardEditMode !== 'undefined' && yardEditMode) {
     icon = '📐'; label = 'Edit boundary';
   } else if (typeof pathMode !== 'undefined' && pathMode && selectedKind) {
@@ -3634,6 +3634,8 @@ function enterWalkMode() {
 function exitWalkMode() {
   if (!walkMode) return;
   walkMode = false;
+  walkingForward = false;
+  walkHadSecondFinger = false;
   if (_walkTeleportRAF !== null) { cancelAnimationFrame(_walkTeleportRAF); _walkTeleportRAF = null; }
   if (_savedCamForWalk) {
     cam.theta = _savedCamForWalk.theta;
@@ -3922,6 +3924,8 @@ let walkMode = false;
 let walkPos = new T.Vector3(0, 0, 18);
 let walkYaw = -Math.PI / 2;   // 0 = +X (east). -π/2 = -Z (north — toward back of yard)
 let walkPitch = -0.05;
+let walkingForward = false;       // true while a second finger is on screen
+let walkHadSecondFinger = false;  // suppresses teleport-on-tap if user did 2-finger walk
 let _savedCamForWalk = null;
 
 function updateWalkCamera() {
@@ -4204,6 +4208,12 @@ canvas.addEventListener('touchstart', e => {
       dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
       didDrag = false;
       touchState = 'walk';
+      walkingForward = false;
+      walkHadSecondFinger = false;
+    }
+    if (e.touches.length >= 2) {
+      walkingForward = true;
+      walkHadSecondFinger = true;
     }
     return;
   }
@@ -4390,12 +4400,27 @@ canvas.addEventListener('touchmove', e => {
 
 canvas.addEventListener('touchend', e => {
   if (walkMode) {
-    if (touchState === 'walk' && !didDrag && e.touches.length === 0 && e.changedTouches.length === 1) {
-      const t = e.changedTouches[0];
-      const pt = groundPick(t);
-      if (pt) teleportWalkTo(pt.x, pt.z);
+    if (e.touches.length === 0) {
+      // All fingers up. Tap-to-teleport ONLY if there was no drag and the
+      // user never engaged a second finger (which is reserved for "walk
+      // forward"). Otherwise the gesture was a look or a forward-walk.
+      if (touchState === 'walk' && !didDrag && !walkHadSecondFinger
+          && e.changedTouches.length === 1) {
+        const t = e.changedTouches[0];
+        const pt = groundPick(t);
+        if (pt) teleportWalkTo(pt.x, pt.z);
+      }
+      touchState = null;
+      walkingForward = false;
+      walkHadSecondFinger = false;
+    } else if (e.touches.length === 1) {
+      // Lifted to a single finger — stop walking forward, but reset
+      // lastMouse to the remaining finger so subsequent look-drag deltas
+      // don't jump from the lifted finger's last position.
+      walkingForward = false;
+      const t = e.touches[0];
+      lastMouse = { x: t.clientX, y: t.clientY };
     }
-    if (e.touches.length === 0) touchState = null;
     return;
   }
   if (yardEditMode) {
@@ -4821,10 +4846,23 @@ function updateScaleBar() {
   _scaleBarLine.style.width = Math.round(chosenPx) + 'px';
 }
 
+let _walkLastTick = 0;
 function animate() {
   requestAnimationFrame(animate);
   updateCompass();
   updateScaleBar();
+  // Walk-forward integration: ~6 ft/sec brisk pace while 2nd finger is held.
+  if (walkMode && walkingForward) {
+    const now = performance.now();
+    const dt = _walkLastTick ? Math.min(0.05, (now - _walkLastTick) / 1000) : 0;
+    _walkLastTick = now;
+    const speed = 6;
+    walkPos.x += Math.cos(walkYaw) * speed * dt;
+    walkPos.z += Math.sin(walkYaw) * speed * dt;
+    updateCam();
+  } else {
+    _walkLastTick = 0;
+  }
   if (measureMode && measurePoints.length === 2) projectMeasureLabel();
   // Pulse the selection outline so it's easy to spot at any zoom level.
   if (selection && selection.outline) {
