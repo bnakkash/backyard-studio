@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v73</div>
+<div id="version">v74</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -4104,7 +4104,7 @@ canvas.addEventListener('mousemove', e => {
       didDrag = true;
     }
     walkYaw -= dx * 0.0045;
-    walkPitch += dy * 0.0018;
+    walkPitch -= dy * 0.0018;
     walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
     updateCam();
     lastMouse = { x: e.clientX, y: e.clientY };
@@ -4335,7 +4335,7 @@ canvas.addEventListener('touchmove', e => {
         didDrag = true;
       }
       walkYaw -= dx * 0.0045;
-      walkPitch += dy * 0.0018;
+      walkPitch -= dy * 0.0018;
       walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
       lastMouse = { x: t.clientX, y: t.clientY };
       updateCam();
@@ -4767,19 +4767,34 @@ function openHelp(scrollToSettings) {
   if (a) a.checked = !!settings.invertMouse;
   if (b) b.checked = !!settings.invertMouseY;
   helpOverlay.hidden = false;
-  // If invoked from the gear button, scroll the body to the Settings section.
-  if (scrollToSettings) {
+  const body = helpOverlay.querySelector('.help-body');
+  // Reset scroll-top whenever opening, so the panel always starts where
+  // expected and never inherits a stale scroll position.
+  if (body) body.scrollTop = 0;
+  // If invoked from the gear button, scroll the panel's internal body
+  // directly. Avoid scrollIntoView() — on iOS Safari it can bubble up
+  // through fixed/overflow:hidden ancestors and end up scrolling the
+  // document body, shifting the canvas off-screen with no way back.
+  if (scrollToSettings && body) {
     requestAnimationFrame(() => {
-      const body = helpOverlay.querySelector('.help-body');
-      const headings = body && body.querySelectorAll('h3');
-      if (headings && headings.length) {
-        const lastH3 = headings[headings.length - 1];
-        if (lastH3) lastH3.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      const headings = body.querySelectorAll('h3');
+      const lastH3 = headings[headings.length - 1];
+      if (lastH3) {
+        // Position-independent: use bounding rects so this works no
+        // matter what the offsetParent chain looks like.
+        const targetRect = lastH3.getBoundingClientRect();
+        const containerRect = body.getBoundingClientRect();
+        body.scrollTop += targetRect.top - containerRect.top;
       }
     });
   }
 }
-function closeHelp() { helpOverlay.hidden = true; }
+function closeHelp() {
+  helpOverlay.hidden = true;
+  // Belt-and-suspenders: if iOS shifted the visual viewport while the
+  // panel was open (e.g. focusing an input briefly), force it back.
+  window.scrollTo(0, 0);
+}
 document.getElementById('help-btn').addEventListener('click', () => openHelp(false));
 document.getElementById('settings-btn').addEventListener('click', () => openHelp(true));
 document.getElementById('help-close').addEventListener('click', closeHelp);
