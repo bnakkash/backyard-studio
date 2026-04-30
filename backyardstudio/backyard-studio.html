@@ -85,7 +85,9 @@
   #left-panel {
     top: calc(20px + var(--safe-top)); left: 20px;
     width: 248px;
-    max-height: calc(100vh - 100px);
+    /* Reserve room for the bottom-bar (~70) + scale-bar (~30) + version
+       chip + safe-area inset, so the palette never runs under them. */
+    max-height: calc(100vh - 180px - var(--safe-top) - var(--safe-bot));
     display: flex; flex-direction: column;
     overflow: hidden;
   }
@@ -118,6 +120,26 @@
     text-transform: uppercase;
     margin-top: 8px;
   }
+  .subtitle-links {
+    display: flex;
+    gap: 6px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .subtitle-links a {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.16em;
+    text-transform: uppercase;
+    color: var(--accent);
+    text-decoration: none;
+    padding: 4px 8px;
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    line-height: 1;
+  }
+  .subtitle-links a:hover { border-color: var(--accent); }
+  .subtitle-links a:active { background: var(--panel-hi); }
 
   .palette {
     flex: 1;
@@ -442,6 +464,13 @@
     color: var(--text-dim);
     letter-spacing: 0.03em;
     line-height: 1.9;
+    max-width: calc(100vw - 280px); /* keep clear of bottom-bar */
+  }
+  /* The help footer documents mouse-only controls (wheel zoom, right-drag).
+     Hide it on any touch device — iPad lands here even in landscape, and
+     the ? overlay covers the same content. */
+  @media (hover: none) and (pointer: coarse) {
+    #help { display: none !important; }
   }
   #scale-bar {
     position: absolute;
@@ -1068,13 +1097,11 @@
 <div id="left-panel" class="panel">
   <div class="panel-header">
     <div class="panel-title"><span class="dot"></span>Backyard Studio</div>
-    <div class="subtitle">
-      Landscape Planner ·
-      <a href="polygon-tracer.html" style="color:var(--accent);text-decoration:none">Trace photo ›</a>
-      &nbsp;·&nbsp;
-      <a href="trace.html" style="color:var(--accent);text-decoration:none">Walk ›</a>
-      &nbsp;·&nbsp;
-      <a href="#" id="edit-yard-link" style="color:var(--accent);text-decoration:none">Edit ›</a>
+    <div class="subtitle">Landscape Planner</div>
+    <div class="subtitle-links">
+      <a href="polygon-tracer.html">Photo</a>
+      <a href="trace.html">Walk</a>
+      <a href="#" id="edit-yard-link">Edit</a>
     </div>
   </div>
   <div class="palette" id="palette"></div>
@@ -1149,7 +1176,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v60</div>
+<div id="version">v61</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
