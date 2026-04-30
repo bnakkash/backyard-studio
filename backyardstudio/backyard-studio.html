@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v83</div>
+<div id="version">v84</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1828,95 +1828,120 @@ scene.add(outerGrass);
 // is now part of the aerial ground texture — no need for 3D geometry.
 
 // ============================================================
+// Shared L-system branch generator. Produces a recursive tree of
+// tapered cylinders with foliage clusters at the tips. Plants tune
+// the parameters; an optional `tipDecorate` hook adds fruit, flower
+// bracts, umbels, etc. at branch terminals.
+// ============================================================
+function _buildBranchTree(opts) {
+  const g = new T.Group();
+  const woodMat = opts.woodMat;
+  const folMats = opts.folMats || [];
+  const tipDecorate = opts.tipDecorate;
+  const _Y = new T.Vector3(0, 1, 0);
+  const _alt = new T.Vector3(1, 0, 0);
+  const radiusFactor = opts.radiusFactor || 0.65;
+  const lengthFactor = opts.lengthFactor || [0.6, 0.2];
+  const branchAngle = opts.branchAngle || [0.45, 0.45];
+  const maxDepth = opts.maxDepth != null ? opts.maxDepth : 4;
+  const minLength = opts.minLength != null ? opts.minLength : 0.6;
+  const foliageSize = opts.foliageSize || 1.1;
+  const foliageVar = opts.foliageVar != null ? opts.foliageVar : 0.5;
+  const foliageCount = opts.foliageCount || [2, 3];
+  const childrenAtRoot = opts.childrenAtRoot || 3;
+  const childrenAtBranch = opts.childrenAtBranch || 2;
+
+  function addBranch(start, end, rStart, rEnd) {
+    const delta = end.clone().sub(start);
+    const len = delta.length();
+    const segs = rStart > 0.4 ? 8 : 5;
+    const cyl = new T.Mesh(
+      new T.CylinderGeometry(rEnd, rStart, len, segs),
+      woodMat
+    );
+    cyl.position.copy(start).add(end).multiplyScalar(0.5);
+    cyl.quaternion.setFromUnitVectors(_Y, delta.normalize());
+    cyl.castShadow = true;
+    g.add(cyl);
+  }
+  function addFoliage(pos, size) {
+    if (!folMats.length) return;
+    const count = foliageCount[0] + Math.floor(Math.random() * (foliageCount[1] - foliageCount[0] + 1));
+    for (let i = 0; i < count; i++) {
+      const r = size * (0.7 + Math.random() * 0.5);
+      const m = new T.Mesh(
+        new T.IcosahedronGeometry(r, 0),
+        folMats[Math.floor(Math.random() * folMats.length)]
+      );
+      m.position.copy(pos);
+      m.position.x += (Math.random() - 0.5) * size * 0.7;
+      m.position.y += (Math.random() - 0.5) * size * 0.5;
+      m.position.z += (Math.random() - 0.5) * size * 0.7;
+      m.scale.set(1.1, 0.85, 1.1);
+      m.castShadow = true; m.receiveShadow = true;
+      g.add(m);
+    }
+  }
+  function grow(start, dir, length, radius, depth) {
+    const end = start.clone().addScaledVector(dir, length);
+    addBranch(start, end, radius, radius * radiusFactor);
+    if (depth >= maxDepth || length < minLength) {
+      const fSize = foliageSize + Math.random() * foliageVar;
+      addFoliage(end, fSize);
+      if (tipDecorate) tipDecorate(g, end, fSize);
+      return;
+    }
+    const numChildren = depth < 1 ? childrenAtRoot : childrenAtBranch;
+    for (let i = 0; i < numChildren; i++) {
+      const tiltAxis = (Math.abs(dir.y) < 0.9 ? _Y : _alt).clone().cross(dir).normalize();
+      const twistAng = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.9;
+      tiltAxis.applyAxisAngle(dir, twistAng);
+      const ang = branchAngle[0] + Math.random() * branchAngle[1];
+      const childDir = dir.clone().applyAxisAngle(tiltAxis, ang);
+      const childLen = length * (lengthFactor[0] + Math.random() * lengthFactor[1]);
+      const childRad = radius * (radiusFactor + Math.random() * 0.05);
+      grow(end, childDir, childLen, childRad, depth + 1);
+    }
+  }
+
+  let stemBase = new T.Vector3(0, 0, 0);
+  if (opts.trunkHeight > 0) {
+    const trunkTop = new T.Vector3(0, opts.trunkHeight, 0);
+    addBranch(stemBase, trunkTop, opts.trunkRadius[0], opts.trunkRadius[1]);
+    stemBase = trunkTop;
+  }
+  const numMain = opts.numMain[0] + Math.floor(Math.random() * (opts.numMain[1] - opts.numMain[0] + 1));
+  for (let i = 0; i < numMain; i++) {
+    const a = (i / numMain) * Math.PI * 2 + Math.random() * 0.5;
+    const tilt = opts.mainTilt[0] + Math.random() * (opts.mainTilt[1] - opts.mainTilt[0]);
+    const dir = new T.Vector3(
+      Math.sin(tilt) * Math.cos(a),
+      Math.cos(tilt),
+      Math.sin(tilt) * Math.sin(a)
+    );
+    const stemLen = opts.mainLength[0] + Math.random() * (opts.mainLength[1] - opts.mainLength[0]);
+    grow(stemBase, dir, stemLen, opts.mainRadius, 0);
+  }
+  return g;
+}
+
+// ============================================================
 // Placeable definitions
 // ============================================================
 const PLACEABLES = {
   tree_oak: {
     name: 'Shade Tree', category: 'Plants', icon: '🌳', footprint: 'Mature ~25 ft tall',
-    build: () => {
-      const g = new T.Group();
-      const woodMat = new T.MeshStandardMaterial({ color: 0x4a3828, roughness: 0.95, metalness: 0 });
-      const folMats = [
-        new T.MeshStandardMaterial({ color: 0x2d5a30, flatShading: true, roughness: 1 }),
-        new T.MeshStandardMaterial({ color: 0x437245, flatShading: true, roughness: 1 }),
-        new T.MeshStandardMaterial({ color: 0x5d8c52, flatShading: true, roughness: 1 })
-      ];
-      const _Y = new T.Vector3(0, 1, 0);
-      const _alt = new T.Vector3(1, 0, 0);
-
-      // Tapered branch segment from `start` to `end`.
-      function addBranch(start, end, rStart, rEnd) {
-        const delta = end.clone().sub(start);
-        const len = delta.length();
-        const segs = rStart > 0.4 ? 8 : 5;
-        const cyl = new T.Mesh(
-          new T.CylinderGeometry(rEnd, rStart, len, segs),
-          woodMat
-        );
-        cyl.position.copy(start).add(end).multiplyScalar(0.5);
-        cyl.quaternion.setFromUnitVectors(_Y, delta.normalize());
-        cyl.castShadow = true;
-        g.add(cyl);
-      }
-      // Foliage cluster at a terminal tip — small overlapping icospheres.
-      function addFoliage(pos, size) {
-        const count = 2 + Math.floor(Math.random() * 2);
-        for (let i = 0; i < count; i++) {
-          const r = size * (0.7 + Math.random() * 0.5);
-          const m = new T.Mesh(
-            new T.IcosahedronGeometry(r, 0),
-            folMats[Math.floor(Math.random() * folMats.length)]
-          );
-          m.position.copy(pos);
-          m.position.x += (Math.random() - 0.5) * size * 0.7;
-          m.position.y += (Math.random() - 0.5) * size * 0.5;
-          m.position.z += (Math.random() - 0.5) * size * 0.7;
-          m.scale.set(1.1, 0.85, 1.1);
-          m.castShadow = true; m.receiveShadow = true;
-          g.add(m);
-        }
-      }
-      // Recursive branch grower. Each call adds one branch segment, then
-      // either drops foliage at the tip or spawns 2-3 child branches that
-      // fan outward from the parent direction.
-      function grow(start, dir, length, radius, depth) {
-        const end = start.clone().addScaledVector(dir, length);
-        addBranch(start, end, radius, radius * 0.65);
-        if (depth >= 4 || length < 0.6) {
-          addFoliage(end, 1.1 + Math.random() * 0.5);
-          return;
-        }
-        const numChildren = depth < 1 ? 3 : 2;
-        for (let i = 0; i < numChildren; i++) {
-          // Build child direction = rotate parent dir around an axis
-          // perpendicular to dir, then twist around dir for radial spread.
-          const tiltAxis = (Math.abs(dir.y) < 0.9 ? _Y : _alt).clone().cross(dir).normalize();
-          const twistAng = (i / numChildren) * Math.PI * 2 + (Math.random() - 0.5) * 0.9;
-          tiltAxis.applyAxisAngle(dir, twistAng);
-          const childDir = dir.clone().applyAxisAngle(tiltAxis, 0.45 + Math.random() * 0.45);
-          const childLen = length * (0.6 + Math.random() * 0.2);
-          const childRad = radius * (0.6 + Math.random() * 0.12);
-          grow(end, childDir, childLen, childRad, depth + 1);
-        }
-      }
-
-      // Trunk: 8 ft tall, tapered.
-      const trunkTop = new T.Vector3(0, 8, 0);
-      addBranch(new T.Vector3(0, 0, 0), trunkTop, 0.95, 0.55);
-      // 3 main branches splaying upward and outward from the crown.
-      const numMain = 3 + Math.floor(Math.random() * 2);
-      for (let i = 0; i < numMain; i++) {
-        const a = (i / numMain) * Math.PI * 2 + Math.random() * 0.5;
-        const tilt = 0.55 + Math.random() * 0.25;
-        const dir = new T.Vector3(
-          Math.sin(tilt) * Math.cos(a),
-          Math.cos(tilt),
-          Math.sin(tilt) * Math.sin(a)
-        );
-        grow(trunkTop, dir, 4 + Math.random() * 1.2, 0.4, 0);
-      }
-      return g;
-    }
+    build: () => _buildBranchTree({
+      woodMat: new T.MeshStandardMaterial({ color: 0x4a3828, roughness: 0.95 }),
+      folMats: [
+        new T.MeshStandardMaterial({ color: 0x2d5a30, flatShading: true }),
+        new T.MeshStandardMaterial({ color: 0x437245, flatShading: true }),
+        new T.MeshStandardMaterial({ color: 0x5d8c52, flatShading: true })
+      ],
+      trunkHeight: 8, trunkRadius: [0.95, 0.55],
+      numMain: [3, 4], mainTilt: [0.55, 0.85], mainLength: [4, 5.2], mainRadius: 0.4,
+      maxDepth: 4, foliageSize: 1.1, foliageVar: 0.5
+    })
   },
   tree_palm: {
     name: 'Palm Tree', category: 'Plants', icon: '🌴', footprint: 'Mature ~22 ft tall',
@@ -1953,45 +1978,24 @@ const PLACEABLES = {
     name: 'Ornamental Shrub', category: 'Plants', icon: '🪴',
     footprint: 'Boxwood / Azalea, ~3 ft mounded',
     build: () => {
-      const g = new T.Group();
-      // Two foliage tones break the smooth-blob look
-      const folA = new T.MeshStandardMaterial({ color: 0x456e34, flatShading: true });
-      const folB = new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true });
       const flowerMat = new T.MeshStandardMaterial({ color: 0xe8a3b8 });
-      // Low spreading mound — 8 clumps in a rough disc, slightly squashed
-      const clumps = 8;
-      for (let i = 0; i < clumps; i++) {
-        const r = 0.45 + Math.random() * 0.3;
-        const a = (i / clumps) * Math.PI * 2 + Math.random() * 0.3;
-        const dist = 0.25 + Math.random() * 0.55;
-        const b = new T.Mesh(
-          new T.IcosahedronGeometry(r, 1),
-          Math.random() < 0.55 ? folA : folB
-        );
-        b.position.set(Math.cos(a) * dist, r * 0.65, Math.sin(a) * dist);
-        b.scale.set(1, 0.78, 1); // squashed for low spreading shape
-        b.castShadow = true; b.receiveShadow = true;
-        g.add(b);
-      }
-      // Center crown clump — slightly taller
-      const crown = new T.Mesh(new T.IcosahedronGeometry(0.55, 1), folB);
-      crown.position.y = 0.85;
-      crown.scale.set(1, 0.85, 1);
-      crown.castShadow = true;
-      g.add(crown);
-      // Pink azalea-style flower flecks
-      for (let i = 0; i < 18; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const dist = 0.3 + Math.random() * 0.6;
-        const f = new T.Mesh(new T.SphereGeometry(0.07, 5, 4), flowerMat);
-        f.position.set(
-          Math.cos(a) * dist,
-          0.55 + Math.random() * 0.55,
-          Math.sin(a) * dist
-        );
-        g.add(f);
-      }
-      return g;
+      return _buildBranchTree({
+        woodMat: new T.MeshStandardMaterial({ color: 0x5a4828, roughness: 0.95 }),
+        folMats: [
+          new T.MeshStandardMaterial({ color: 0x456e34, flatShading: true }),
+          new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true })
+        ],
+        trunkHeight: 0,
+        numMain: [5, 7], mainTilt: [0.4, 0.9], mainLength: [0.8, 1.2], mainRadius: 0.06,
+        maxDepth: 2, minLength: 0.3, foliageSize: 0.4, foliageVar: 0.2,
+        tipDecorate: (g, pos) => {
+          if (Math.random() < 0.45) {
+            const f = new T.Mesh(new T.SphereGeometry(0.07, 5, 4), flowerMat);
+            f.position.copy(pos); f.position.y += 0.1;
+            g.add(f);
+          }
+        }
+      });
     }
   },
   flower_bed: {
@@ -2402,123 +2406,57 @@ const PLACEABLES = {
     name: 'False Rosemary', category: 'Plants', icon: '🌿',
     footprint: 'Low silvery sprawling shrub',
     build: () => {
-      const g = new T.Group();
-      // Two silvery-green tones to break up the smooth blob
-      const folA = new T.MeshStandardMaterial({ color: 0x95a87f, flatShading: true });
-      const folB = new T.MeshStandardMaterial({ color: 0xb0bf95, flatShading: true });
-      // Wide low sprawl — 10 small clumps in an elongated mound
-      const clumps = 10;
-      for (let i = 0; i < clumps; i++) {
-        const r = 0.22 + Math.random() * 0.18;
-        const a = (i / clumps) * Math.PI * 2 + Math.random() * 0.4;
-        // Stretched along X to suggest sprawling habit
-        const dx = Math.cos(a) * (0.4 + Math.random() * 0.6);
-        const dz = Math.sin(a) * (0.25 + Math.random() * 0.35);
-        const b = new T.Mesh(
-          new T.IcosahedronGeometry(r, 1),
-          Math.random() < 0.55 ? folA : folB
-        );
-        b.position.set(dx, r * 0.55, dz);
-        b.scale.set(1.1, 0.62, 1.1); // very flat / spreading
-        b.castShadow = true; b.receiveShadow = true;
-        g.add(b);
-      }
-      // Lavender flower flecks scattered across the top
       const flowerMat = new T.MeshStandardMaterial({ color: 0xb89bd6 });
-      for (let i = 0; i < 20; i++) {
-        const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
-        f.position.set(
-          (Math.random() - 0.5) * 1.7,
-          0.4 + Math.random() * 0.2,
-          (Math.random() - 0.5) * 1.0
-        );
-        g.add(f);
-      }
-      return g;
+      return _buildBranchTree({
+        woodMat: new T.MeshStandardMaterial({ color: 0x6a5a45, roughness: 0.95 }),
+        folMats: [
+          new T.MeshStandardMaterial({ color: 0x95a87f, flatShading: true }),
+          new T.MeshStandardMaterial({ color: 0xb0bf95, flatShading: true })
+        ],
+        trunkHeight: 0,
+        numMain: [6, 9], mainTilt: [0.7, 1.15], mainLength: [0.6, 1.0], mainRadius: 0.04,
+        maxDepth: 2, minLength: 0.2, foliageSize: 0.18, foliageVar: 0.1,
+        tipDecorate: (g, pos) => {
+          if (Math.random() < 0.55) {
+            const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
+            f.position.copy(pos); f.position.y += 0.06;
+            g.add(f);
+          }
+        }
+      });
     }
   },
   tree_orange: {
     name: 'Orange Tree', category: 'Plants', icon: '🍊', footprint: 'Citrus, ~12 ft tall',
     build: () => {
-      // Built at half scale, then scaled 2× uniformly so all the parametric
-      // constants (branch lengths, foliage offsets, orange spread) come along.
-      const outer = new T.Group();
-      const g = new T.Group();
-      outer.add(g);
-      outer.scale.setScalar(5);
-      const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028 });
-      const leafMat = new T.MeshStandardMaterial({ color: 0x355d2e, flatShading: true });
-      const orangeMat = new T.MeshStandardMaterial({ color: 0xe08a2e });
-
-      // Trunk
-      const trunk = new T.Mesh(
-        new T.CylinderGeometry(0.18, 0.26, 2.0, 8),
-        woodMat
-      );
-      trunk.position.y = 1.0; trunk.castShadow = true; g.add(trunk);
-
-      // Branches splaying outward from upper trunk. Each branch is a cylinder
-      // oriented from trunk-top to a tip point on a hemisphere above.
-      const trunkTop = new T.Vector3(0, 1.95, 0);
-      const branchCount = 6;
-      const tips = [];
-      for (let i = 0; i < branchCount; i++) {
-        const a = (i / branchCount) * Math.PI * 2 + Math.random() * 0.4;
-        const tiltFromVertical = 0.85 + Math.random() * 0.2; // ~50°
-        const len = 1.3 + Math.random() * 0.4;
-        const tip = new T.Vector3(
-          Math.sin(tiltFromVertical) * len * Math.cos(a),
-          Math.cos(tiltFromVertical) * len,
-          Math.sin(tiltFromVertical) * len * Math.sin(a)
-        ).add(trunkTop);
-        tips.push(tip);
-        const dir = tip.clone().sub(trunkTop);
-        const branch = new T.Mesh(
-          new T.CylinderGeometry(0.05, 0.1, dir.length(), 6),
-          woodMat
-        );
-        branch.position.copy(trunkTop).add(tip).multiplyScalar(0.5);
-        branch.quaternion.setFromUnitVectors(
-          new T.Vector3(0, 1, 0),
-          dir.normalize()
-        );
-        branch.castShadow = true;
-        g.add(branch);
-      }
-
-      // Smaller foliage clusters at each branch tip — no central afro.
-      tips.forEach(tip => {
-        for (let j = 0; j < 3; j++) {
-          const fol = new T.Mesh(
-            new T.IcosahedronGeometry(0.45 + Math.random() * 0.2, 1),
-            leafMat
-          );
-          fol.position.set(
-            tip.x + (Math.random() - 0.5) * 0.5,
-            tip.y + (Math.random() - 0.5) * 0.4,
-            tip.z + (Math.random() - 0.5) * 0.5
-          );
-          fol.castShadow = true; fol.receiveShadow = true;
-          g.add(fol);
+      const orangeMat = new T.MeshStandardMaterial({ color: 0xe08a2e, roughness: 0.65 });
+      const tree = _buildBranchTree({
+        woodMat: new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }),
+        folMats: [
+          new T.MeshStandardMaterial({ color: 0x355d2e, flatShading: true }),
+          new T.MeshStandardMaterial({ color: 0x4a7a40, flatShading: true })
+        ],
+        trunkHeight: 1.0, trunkRadius: [0.26, 0.18],
+        numMain: [4, 5], mainTilt: [0.6, 0.95], mainLength: [1.0, 1.4], mainRadius: 0.1,
+        maxDepth: 3, minLength: 0.3, foliageSize: 0.45, foliageVar: 0.2,
+        tipDecorate: (g, pos) => {
+          // Cluster of oranges at each fruiting tip
+          const num = 4 + Math.floor(Math.random() * 4);
+          for (let j = 0; j < num; j++) {
+            const o = new T.Mesh(new T.SphereGeometry(0.13, 6, 5), orangeMat);
+            o.position.copy(pos);
+            o.position.x += (Math.random() - 0.5) * 0.7;
+            o.position.y += (Math.random() - 0.5) * 0.5;
+            o.position.z += (Math.random() - 0.5) * 0.7;
+            o.castShadow = true;
+            g.add(o);
+          }
         }
       });
-
-      // Dense oranges clustered at branch tips
-      tips.forEach(tip => {
-        const num = 7 + Math.floor(Math.random() * 4);
-        for (let j = 0; j < num; j++) {
-          const o = new T.Mesh(new T.SphereGeometry(0.13, 6, 5), orangeMat);
-          o.position.set(
-            tip.x + (Math.random() - 0.5) * 0.8,
-            tip.y + (Math.random() - 0.5) * 0.6,
-            tip.z + (Math.random() - 0.5) * 0.8
-          );
-          o.castShadow = true;
-          g.add(o);
-        }
-      });
-
-      return outer;
+      // Built small, scaled up so all the branch parameters land at
+      // citrus-tree size (~12 ft tall after the 5× scale).
+      tree.scale.setScalar(5);
+      return tree;
     }
   },
   salvia: {
@@ -2747,109 +2685,65 @@ const PLACEABLES = {
     name: 'Viburnum', category: 'Plants', icon: '🌱',
     footprint: 'Dense upright hedge · 5–6 ft',
     build: () => {
-      const g = new T.Group();
-      // Two shades of dark glossy green for the layered foliage look
-      const folA = new T.MeshStandardMaterial({ color: 0x2d4d2a, flatShading: true });
-      const folB = new T.MeshStandardMaterial({ color: 0x416a3b, flatShading: true });
-      const flowerMat = new T.MeshStandardMaterial({ color: 0xefe9d6 });
-      // Upright column form: 3 vertical layers, each with several clumps
-      for (let layer = 0; layer < 3; layer++) {
-        const yBase = 0.4 + layer * 1.4;
-        const clumps = 5;
-        for (let i = 0; i < clumps; i++) {
-          const r = 0.55 + Math.random() * 0.25;
-          const a = (i / clumps) * Math.PI * 2 + (layer * 0.5);
-          const dist = 0.35 + Math.random() * 0.4;
-          const b = new T.Mesh(
-            new T.IcosahedronGeometry(r, 1),
-            (layer === 0 || Math.random() < 0.4) ? folA : folB
-          );
-          b.position.set(Math.cos(a) * dist, yBase + r * 0.5, Math.sin(a) * dist);
-          b.scale.set(1, 1.05, 1); // slightly taller than wide
-          b.castShadow = true; b.receiveShadow = true;
-          g.add(b);
+      const umbelMat = new T.MeshStandardMaterial({ color: 0xefe9d6, flatShading: true });
+      return _buildBranchTree({
+        woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
+        folMats: [
+          new T.MeshStandardMaterial({ color: 0x2d4d2a, flatShading: true }),
+          new T.MeshStandardMaterial({ color: 0x416a3b, flatShading: true })
+        ],
+        trunkHeight: 1.5, trunkRadius: [0.13, 0.1],
+        numMain: [5, 7], mainTilt: [0.35, 0.7], mainLength: [1.5, 2.0], mainRadius: 0.07,
+        maxDepth: 3, minLength: 0.35, foliageSize: 0.5, foliageVar: 0.22,
+        tipDecorate: (g, pos) => {
+          // Characteristic white domed flower umbel on ~40% of tips
+          if (Math.random() < 0.4) {
+            const u = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), umbelMat);
+            u.position.copy(pos); u.position.y += 0.15;
+            u.scale.y = 0.55;
+            g.add(u);
+          }
         }
-      }
-      // Top crown clump
-      const crown = new T.Mesh(new T.IcosahedronGeometry(0.55, 1), folB);
-      crown.position.y = 5.1;
-      crown.castShadow = true; g.add(crown);
-      // White viburnum flower umbels — characteristic dome-shaped clusters
-      for (let i = 0; i < 14; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const dist = 0.3 + Math.random() * 0.7;
-        const umbel = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), flowerMat);
-        umbel.position.set(
-          Math.cos(a) * dist,
-          2.0 + Math.random() * 3.0,
-          Math.sin(a) * dist
-        );
-        umbel.scale.y = 0.55;
-        g.add(umbel);
-      }
-      return g;
+      });
     }
   },
   bougainvillea: {
     name: 'Bougainvillea', category: 'Plants', icon: '🌺',
     footprint: 'Cascading magenta vine · 6–8 ft',
     build: () => {
-      const g = new T.Group();
-      const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028 });
-      const folMat = new T.MeshStandardMaterial({ color: 0x3e6a36, flatShading: true });
-      const folMatLi = new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true });
       const bractA = new T.MeshStandardMaterial({ color: 0xc4377d, side: T.DoubleSide });
       const bractB = new T.MeshStandardMaterial({ color: 0xe04a8e, side: T.DoubleSide });
-      // Multi-stem woody trunk hint
-      const trunk = new T.Mesh(
-        new T.CylinderGeometry(0.18, 0.32, 1.4, 6),
-        woodMat
-      );
-      trunk.position.y = 0.7; trunk.castShadow = true; g.add(trunk);
-      // Sparse green foliage — scaffolding for the bracts to sit on
-      for (let i = 0; i < 5; i++) {
-        const r = 0.7 + Math.random() * 0.4;
-        const a = (i / 5) * Math.PI * 2 + Math.random() * 0.3;
-        const dist = 0.6 + Math.random() * 0.8;
-        const fol = new T.Mesh(
-          new T.IcosahedronGeometry(r, 1),
-          Math.random() < 0.6 ? folMat : folMatLi
-        );
-        fol.position.set(Math.cos(a) * dist, 1.7 + Math.random() * 1.2, Math.sin(a) * dist);
-        fol.castShadow = true; fol.receiveShadow = true;
-        g.add(fol);
-      }
-      // Cascading magenta bract clusters — flat triangular plates pointing
-      // outward and slightly downward (papery-thin like real bracts).
-      for (let i = 0; i < 90; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const dist = 0.6 + Math.random() * 1.7;
-        const y = 1.0 + Math.random() * 2.6;
-        const size = 0.18 + Math.random() * 0.16;
-        const bract = new T.Mesh(
-          new T.CircleGeometry(size, 6),
-          Math.random() < 0.6 ? bractA : bractB
-        );
-        bract.position.set(Math.cos(a) * dist, y, Math.sin(a) * dist);
-        // Face slightly outward + downward, with random twist
-        bract.lookAt(Math.cos(a) * dist * 2, y - 0.4, Math.sin(a) * dist * 2);
-        bract.rotateZ(Math.random() * Math.PI * 2);
-        g.add(bract);
-      }
-      // A few tip clusters drooping below the canopy for cascading look
-      for (let i = 0; i < 14; i++) {
-        const a = Math.random() * Math.PI * 2;
-        const dist = 0.9 + Math.random() * 1.0;
-        const y = 0.5 + Math.random() * 0.8;
-        const bract = new T.Mesh(
-          new T.CircleGeometry(0.16 + Math.random() * 0.1, 6),
-          bractA
-        );
-        bract.position.set(Math.cos(a) * dist, y, Math.sin(a) * dist);
-        bract.lookAt(Math.cos(a) * dist * 2, y - 0.6, Math.sin(a) * dist * 2);
-        g.add(bract);
-      }
-      return g;
+      return _buildBranchTree({
+        woodMat: new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }),
+        folMats: [
+          new T.MeshStandardMaterial({ color: 0x3e6a36, flatShading: true }),
+          new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true })
+        ],
+        trunkHeight: 1.4, trunkRadius: [0.32, 0.18],
+        numMain: [4, 6], mainTilt: [0.6, 1.1], mainLength: [1.8, 2.6], mainRadius: 0.1,
+        maxDepth: 3, minLength: 0.3, foliageSize: 0.32, foliageVar: 0.18,
+        lengthFactor: [0.65, 0.25],
+        tipDecorate: (g, pos) => {
+          // Cluster of magenta bract circles fanning out from each tip,
+          // tilted papery-thin and pointing slightly downward.
+          const num = 4 + Math.floor(Math.random() * 4);
+          for (let j = 0; j < num; j++) {
+            const a = Math.random() * Math.PI * 2;
+            const r = 0.18 + Math.random() * 0.1;
+            const bract = new T.Mesh(
+              new T.CircleGeometry(r, 6),
+              Math.random() < 0.6 ? bractA : bractB
+            );
+            bract.position.copy(pos);
+            bract.position.x += Math.cos(a) * 0.18;
+            bract.position.y += -0.05 + Math.random() * 0.2;
+            bract.position.z += Math.sin(a) * 0.18;
+            bract.lookAt(bract.position.x * 2, bract.position.y - 0.4, bract.position.z * 2);
+            bract.rotateZ(Math.random() * Math.PI * 2);
+            g.add(bract);
+          }
+        }
+      });
     }
   },
   planter_medium: {
