@@ -472,6 +472,30 @@
   @media (hover: none) and (pointer: coarse) {
     #help { display: none !important; }
   }
+  #walk-zones {
+    position: absolute;
+    inset: calc(var(--safe-top)) 0 calc(var(--safe-bot)) 0;
+    pointer-events: none;
+    display: none;
+    z-index: 4;
+  }
+  #walk-zones.show { display: flex; }
+  #walk-zones.show .walk-zone {
+    flex: 1; display: flex; align-items: flex-end; justify-content: center;
+    padding-bottom: 30%;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; letter-spacing: 0.3em;
+    color: rgba(242, 237, 224, 0.28);
+    animation: walk-zone-fade 4s ease-out forwards;
+  }
+  #walk-zones.show .walk-zone-left {
+    border-right: 1px dashed rgba(242, 237, 224, 0.10);
+  }
+  @keyframes walk-zone-fade {
+    0%   { opacity: 1; }
+    70%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
   #scale-bar {
     position: absolute;
     bottom: calc(78px + var(--safe-bot)); left: 12px;
@@ -1173,11 +1197,15 @@
   <button class="cam-btn" id="walk-btn" aria-pressed="false">Walk</button>
 </div>
 
+<div id="walk-zones" aria-hidden="true">
+  <div class="walk-zone walk-zone-left"><span>WALK</span></div>
+  <div class="walk-zone walk-zone-right"><span>LOOK</span></div>
+</div>
 <div id="scale-bar">
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v72</div>
+<div id="version">v73</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3626,22 +3654,26 @@ function enterWalkMode() {
   walkPitch = -0.06;
   walkSpeed = 0;
   _walkBobPhase = 0;
-  _walkReleaseTime = 0;
-  _walkLookId = null;
+  _walkTouches.clear();
+  _walkActiveLookId = null;
+  _walkAnyForwardEver = false;
   walkMode = true;
   updateCam();
   document.getElementById('walk-btn').classList.add('active');
   document.getElementById('walk-btn').setAttribute('aria-pressed', 'true');
+  const zone = document.getElementById('walk-zones');
+  if (zone) zone.classList.add('show');
   refreshModeBadge();
-  toast('Walk mode · drag to look · tap to walk');
+  toast('Walk · LEFT = walk · RIGHT = look · tap right ground to teleport');
 }
 function exitWalkMode() {
   if (!walkMode) return;
   walkMode = false;
-  walkingForward = false;
-  walkHadSecondFinger = false;
-  _walkReleaseTime = 0;
-  _walkLookId = null;
+  _walkTouches.clear();
+  _walkActiveLookId = null;
+  _walkAnyForwardEver = false;
+  const zone = document.getElementById('walk-zones');
+  if (zone) zone.classList.remove('show');
   if (_walkTeleportRAF !== null) { cancelAnimationFrame(_walkTeleportRAF); _walkTeleportRAF = null; }
   if (_savedCamForWalk) {
     cam.theta = _savedCamForWalk.theta;
@@ -3930,20 +3962,17 @@ let walkMode = false;
 let walkPos = new T.Vector3(0, 0, 18);
 let walkYaw = -Math.PI / 2;   // 0 = +X (east). -π/2 = -Z (north — toward back of yard)
 let walkPitch = -0.05;
-let walkingForward = false;       // true while a second finger is on screen
-let walkHadSecondFinger = false;  // suppresses teleport-on-tap if user did 2-finger walk
-let walkSpeed = 0;                // ft/sec, eased toward target
-// Grace window after lifting the 2nd finger (you almost certainly want to
-// reposition and keep going). _walkReleaseTime = 0 means "not in grace."
-const WALK_GRACE_MS = 700;
-let _walkReleaseTime = 0;
-// Track the look finger's persistent Touch identifier so look-drag follows
-// the right finger even when the user lifts/repositions one of two touches
-// (which can shuffle e.touches[] order after a re-press).
-let _walkLookId = null;
-const WALK_MAX_SPEED = 6.5;       // ft/sec at full pace
-let _walkBobPhase = 0;            // accumulated phase for head bob
+let walkSpeed = 0;            // ft/sec, eased toward target
+const WALK_MAX_SPEED = 6.5;   // ft/sec at full pace
+let _walkBobPhase = 0;        // accumulated phase for head bob
 let _savedCamForWalk = null;
+// Zone-based controls: each touch's role is fixed at touchdown by which
+// half of the canvas it landed on. LEFT half = "walk forward" (any touch
+// there is a throttle). RIGHT half = "look" (drag to pan camera). This
+// avoids identity ambiguity when fingers lift and re-press.
+const _walkTouches = new Map(); // touchId → 'walk' | 'look'
+let _walkActiveLookId = null;   // currently-tracked look finger (most recent)
+let _walkAnyForwardEver = false; // set if a walk-zone touch happened in this gesture
 
 function updateWalkCamera() {
   // Subtle head bob synced to walking pace. Amplitude tapers with speed
@@ -4223,29 +4252,29 @@ const LOCK_DOMINANCE = 1.2; // winner must be this much over the runner-up
 canvas.addEventListener('touchstart', e => {
   e.preventDefault();
   if (walkMode) {
-    if (e.touches.length === 1) {
-      const t = e.touches[0];
-      lastMouse = { x: t.clientX, y: t.clientY };
-      dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+    // Zone classification — left half is walk throttle, right half is look.
+    // Role is locked at touchdown so that mid-drag a look-finger entering
+    // the walk zone (or vice versa) doesn't change behavior.
+    const rect = canvas.getBoundingClientRect();
+    const mid = rect.left + rect.width / 2;
+    if (touchState !== 'walk') {
+      // Fresh gesture — reset per-gesture flags.
+      _walkAnyForwardEver = false;
       didDrag = false;
       touchState = 'walk';
-      walkingForward = false;
-      walkHadSecondFinger = false;
-      _walkReleaseTime = 0;
-      _walkLookId = t.identifier;
     }
-    if (e.touches.length >= 2) {
-      // Additional finger = walk forward. Don't reassign the look finger;
-      // the originally-tracked one keeps driving the camera.
-      walkingForward = true;
-      walkHadSecondFinger = true;
-      _walkReleaseTime = 0; // re-engaged before grace expired; cancel timer
-      // If we somehow lost the look id (e.g. starting walk with 2 fingers
-      // already down), claim the first one.
-      if (_walkLookId === null) {
-        const t0 = e.touches[0];
-        _walkLookId = t0.identifier;
-        lastMouse = { x: t0.clientX, y: t0.clientY };
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      const role = t.clientX < mid ? 'walk' : 'look';
+      _walkTouches.set(t.identifier, role);
+      if (role === 'walk') {
+        _walkAnyForwardEver = true;
+      } else {
+        // Most recent look-zone touch wins; sync drag baseline.
+        _walkActiveLookId = t.identifier;
+        lastMouse = { x: t.clientX, y: t.clientY };
+        dragStart = { x: t.clientX, y: t.clientY, t: performance.now() };
+        didDrag = false;
       }
     }
     return;
@@ -4295,32 +4324,22 @@ canvas.addEventListener('touchstart', e => {
 canvas.addEventListener('touchmove', e => {
   e.preventDefault();
   if (walkMode) {
-    // Look-drag follows the tracked look finger by identifier. Touch
-    // identifiers persist across re-presses, so the camera doesn't get
-    // hijacked when a stationary "walk forward" finger ends up at
-    // touches[0] after the user lifts and re-presses the look finger.
-    if (touchState !== 'walk' || e.touches.length === 0) return;
-    let t = null;
-    for (let i = 0; i < e.touches.length; i++) {
-      if (e.touches[i].identifier === _walkLookId) { t = e.touches[i]; break; }
-    }
-    if (!t) {
-      // Lost track (rare) — re-bind to the first available touch and skip
-      // this frame to avoid a delta jump.
-      t = e.touches[0];
-      _walkLookId = t.identifier;
+    // Only the active look-zone touch drives the camera. Walk-zone touches
+    // never affect look — sliding a walk finger around does nothing visual.
+    if (touchState !== 'walk' || _walkActiveLookId === null) return;
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      if (t.identifier !== _walkActiveLookId) continue;
+      const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
+      if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) {
+        didDrag = true;
+      }
+      walkYaw -= dx * 0.0045;
+      walkPitch += dy * 0.0018;
+      walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
       lastMouse = { x: t.clientX, y: t.clientY };
-      return;
+      updateCam();
     }
-    const dx = t.clientX - lastMouse.x, dy = t.clientY - lastMouse.y;
-    if (!didDrag && Math.hypot(t.clientX - dragStart.x, t.clientY - dragStart.y) > 4) {
-      didDrag = true;
-    }
-    walkYaw -= dx * 0.0045;
-    walkPitch += dy * 0.0018;
-    walkPitch = Math.max(-1.2, Math.min(1.2, walkPitch));
-    updateCam();
-    lastMouse = { x: t.clientX, y: t.clientY };
     return;
   }
   if (yardEditMode) {
@@ -4448,31 +4467,38 @@ canvas.addEventListener('touchmove', e => {
 
 canvas.addEventListener('touchend', e => {
   if (walkMode) {
+    // Drop lifted touches from the role map.
+    for (let i = 0; i < e.changedTouches.length; i++) {
+      const t = e.changedTouches[i];
+      const role = _walkTouches.get(t.identifier);
+      _walkTouches.delete(t.identifier);
+      if (role === 'look' && t.identifier === _walkActiveLookId) {
+        // Promote another still-down look touch to active, syncing
+        // lastMouse so the next drag starts without a delta jump.
+        _walkActiveLookId = null;
+        for (let j = 0; j < e.touches.length; j++) {
+          const tt = e.touches[j];
+          if (_walkTouches.get(tt.identifier) === 'look') {
+            _walkActiveLookId = tt.identifier;
+            lastMouse = { x: tt.clientX, y: tt.clientY };
+            break;
+          }
+        }
+      }
+    }
     if (e.touches.length === 0) {
-      // All fingers up. Tap-to-teleport ONLY if there was no drag and the
-      // user never engaged a second finger (which is reserved for "walk
-      // forward"). Otherwise the gesture was a look or a forward-walk.
-      if (touchState === 'walk' && !didDrag && !walkHadSecondFinger
+      // All fingers up. Tap-to-teleport ONLY if it was a single-touch tap
+      // in the look zone with no drag and no walk-zone finger ever down.
+      if (touchState === 'walk' && !didDrag && !_walkAnyForwardEver
           && e.changedTouches.length === 1) {
         const t = e.changedTouches[0];
         const pt = groundPick(t);
         if (pt) teleportWalkTo(pt.x, pt.z);
       }
       touchState = null;
-      walkingForward = false;
-      walkHadSecondFinger = false;
-      _walkReleaseTime = 0; // fully released; no grace
-      _walkLookId = null;
-    } else if (e.touches.length === 1) {
-      // Lifted from 2 fingers down to 1. Start the grace window so users
-      // can reposition without losing momentum, and rebind the look finger
-      // to whichever touch survived — that's the one they'll drag for look
-      // until the second finger comes back down.
-      if (walkingForward) _walkReleaseTime = performance.now();
-      walkingForward = false;
-      const t = e.touches[0];
-      _walkLookId = t.identifier;
-      lastMouse = { x: t.clientX, y: t.clientY };
+      _walkTouches.clear();
+      _walkActiveLookId = null;
+      _walkAnyForwardEver = false;
     }
     return;
   }
@@ -4566,6 +4592,10 @@ canvas.addEventListener('touchcancel', () => {
   lastTouchCenter = null;
   lastTouchAngle = null;
   dragVel.x = 0; dragVel.y = 0;
+  // Walk-mode zone state — drop any tracked touches.
+  _walkTouches.clear();
+  _walkActiveLookId = null;
+  _walkAnyForwardEver = false;
 });
 
 // ===== Picking =====
@@ -4911,16 +4941,12 @@ function animate() {
     const now = performance.now();
     const dt = _walkLastTick ? Math.min(0.05, (now - _walkLastTick) / 1000) : 0;
     _walkLastTick = now;
-    // Honor the grace window so brief 2nd-finger lifts (to reposition on
-    // screen) don't kill momentum.
-    const inGrace = _walkReleaseTime !== 0 && (now - _walkReleaseTime) < WALK_GRACE_MS;
-    const targetSpeed = (walkingForward || inGrace) ? WALK_MAX_SPEED : 0;
-    if (inGrace && !walkingForward) {
-      // Keep walking at full pace through the grace window.
-      walkSpeed = WALK_MAX_SPEED;
-    } else if (!walkingForward && _walkReleaseTime !== 0 && !inGrace) {
-      _walkReleaseTime = 0; // grace expired, fall through to normal ramp-down
+    // Walk forward whenever any walk-zone touch is currently down.
+    let forward = false;
+    for (const role of _walkTouches.values()) {
+      if (role === 'walk') { forward = true; break; }
     }
+    const targetSpeed = forward ? WALK_MAX_SPEED : 0;
     // Critically-damped low-pass: ~0.25s to reach target. Matches a
     // human's natural ramp-up/ramp-down when starting/stopping a step.
     const ease = 1 - Math.exp(-dt / 0.18);
