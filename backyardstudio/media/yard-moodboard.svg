@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 900">
+  <rect width="1400" height="900" fill="#1a1f17"/>
+  <text x="60" y="90" font-family="Georgia, serif" font-size="58" fill="#f2ede0">Backyard Moodboard</text>
+  <text x="60" y="130" font-family="ui-monospace,monospace" font-size="20" fill="#d4a574" letter-spacing="4">MATERIAL + PLANTING DIRECTION</text>
+  <g transform="translate(60,180)">
+    <rect width="410" height="300" fill="#4a6d45"/><text x="20" y="40" fill="#f2ede0" font-size="26">Lawn tone</text>
+    <rect x="450" width="410" height="300" fill="#8f826f"/><text x="470" y="40" fill="#f2ede0" font-size="26">Paver tone</text>
+    <rect x="900" width="410" height="300" fill="#e6dcc8"/><text x="920" y="40" fill="#222" font-size="26">House facade</text>
+    <rect y="340" width="410" height="300" fill="#5d3f2b"/><text x="20" y="380" fill="#f2ede0" font-size="26">Wood accents</text>
+    <rect x="450" y="340" width="410" height="300" fill="#5d7891"/><text x="470" y="380" fill="#f2ede0" font-size="26">Water reflection</text>
+    <rect x="900" y="340" width="410" height="300" fill="#d4a574"/><text x="920" y="380" fill="#222" font-size="26">Warm highlights</text>
+  </g>
+</svg>
