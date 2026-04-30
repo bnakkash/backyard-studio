@@ -1177,7 +1177,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v68</div>
+<div id="version">v69</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3624,6 +3624,8 @@ function enterWalkMode() {
   // so the view direction in XZ is opposite of (cos(theta), sin(theta)).
   walkYaw = cam.theta + Math.PI;
   walkPitch = -0.06;
+  walkSpeed = 0;
+  _walkBobPhase = 0;
   walkMode = true;
   updateCam();
   document.getElementById('walk-btn').classList.add('active');
@@ -3926,15 +3928,22 @@ let walkYaw = -Math.PI / 2;   // 0 = +X (east). -π/2 = -Z (north — toward bac
 let walkPitch = -0.05;
 let walkingForward = false;       // true while a second finger is on screen
 let walkHadSecondFinger = false;  // suppresses teleport-on-tap if user did 2-finger walk
+let walkSpeed = 0;                // ft/sec, eased toward target
+const WALK_MAX_SPEED = 6.5;       // ft/sec at full pace
+let _walkBobPhase = 0;            // accumulated phase for head bob
 let _savedCamForWalk = null;
 
 function updateWalkCamera() {
-  camera.position.set(walkPos.x, WALK_EYE_HEIGHT, walkPos.z);
+  // Subtle head bob synced to walking pace. Amplitude tapers with speed
+  // so a stopped or just-starting walker barely bobs.
+  const speedFrac = WALK_MAX_SPEED > 0 ? walkSpeed / WALK_MAX_SPEED : 0;
+  const bob = Math.sin(_walkBobPhase) * 0.07 * speedFrac;
+  camera.position.set(walkPos.x, WALK_EYE_HEIGHT + bob, walkPos.z);
   const cy = Math.cos(walkPitch);
   const fx = cy * Math.cos(walkYaw);
   const fy = Math.sin(walkPitch);
   const fz = cy * Math.sin(walkYaw);
-  camera.lookAt(walkPos.x + fx, WALK_EYE_HEIGHT + fy, walkPos.z + fz);
+  camera.lookAt(walkPos.x + fx, WALK_EYE_HEIGHT + bob + fy, walkPos.z + fz);
 }
 
 function updateCam() {
@@ -4854,17 +4863,32 @@ function animate() {
   requestAnimationFrame(animate);
   updateCompass();
   updateScaleBar();
-  // Walk-forward integration: ~6 ft/sec brisk pace while 2nd finger is held.
-  if (walkMode && walkingForward) {
+  // Walk integrator: speed eases toward 0 / WALK_MAX_SPEED so the camera
+  // doesn't lurch into and out of motion. Head bob phase advances with
+  // distance traveled so a slow walker bobs slower than a fast one.
+  if (walkMode) {
     const now = performance.now();
     const dt = _walkLastTick ? Math.min(0.05, (now - _walkLastTick) / 1000) : 0;
     _walkLastTick = now;
-    const speed = 6.5; // ft/sec — brisk walking pace
-    walkPos.x += Math.cos(walkYaw) * speed * dt;
-    walkPos.z += Math.sin(walkYaw) * speed * dt;
-    updateCam();
+    const targetSpeed = walkingForward ? WALK_MAX_SPEED : 0;
+    // Critically-damped low-pass: ~0.25s to reach target. Matches a
+    // human's natural ramp-up/ramp-down when starting/stopping a step.
+    const ease = 1 - Math.exp(-dt / 0.18);
+    walkSpeed += (targetSpeed - walkSpeed) * ease;
+    if (Math.abs(walkSpeed - targetSpeed) < 0.01) walkSpeed = targetSpeed;
+    if (walkSpeed > 0.001) {
+      walkPos.x += Math.cos(walkYaw) * walkSpeed * dt;
+      walkPos.z += Math.sin(walkYaw) * walkSpeed * dt;
+      // Bob phase: 1 step ≈ 2.5 ft. Two bobs per step → 0.8 cycles/ft.
+      _walkBobPhase += dt * walkSpeed * 1.6;
+    } else {
+      _walkBobPhase = 0;
+    }
+    updateCam(); // refresh every frame so bob settles even when stopping
   } else {
     _walkLastTick = 0;
+    walkSpeed = 0;
+    _walkBobPhase = 0;
   }
   if (measureMode && measurePoints.length === 2) projectMeasureLabel();
   // Pulse the selection outline so it's easy to spot at any zoom level.
