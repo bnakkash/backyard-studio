@@ -1176,7 +1176,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v62</div>
+<div id="version">v63</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -4162,12 +4162,12 @@ canvas.addEventListener('touchmove', e => {
     }
 
     // Gearbox: accumulate motion in each axis IN PIXELS so the three are
-    // physically comparable. Twist score uses the COMBINED arc the two
-    // fingers sweep — |dAngle| * d (not d/2 = single-finger arc) — so
-    // small finger separations don't put twist at a disadvantage against
-    // tilt drift. With a floor of 80px so very close fingers still
-    // register a deliberate rotation.
-    const twistRadius = Math.max(80, d);
+    // physically comparable. Twist score uses each finger's arc length
+    // (|dAngle| * d/2). With a floor of 80 px so a deliberate twist still
+    // crosses the threshold even when fingers are close together. Using
+    // full d here previously made tilt-with-incidental-drift register as
+    // twist on wide finger spreads.
+    const twistRadius = Math.max(80, d * 0.5);
     const dArc = Math.abs(dAngle) * twistRadius;
     cumTilt  += Math.abs(dy);
     cumPinch += Math.abs(dPinch);
