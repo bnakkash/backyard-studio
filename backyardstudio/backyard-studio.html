@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v79</div>
+<div id="version">v80</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2075,13 +2075,17 @@ const PLACEABLES = {
       deck.position.y = 0.11; deck.receiveShadow = true; g.add(deck);
       const pool = new T.Mesh(
         new T.BoxGeometry(11, 0.3, 7),
-        new T.MeshStandardMaterial({ color: 0x3f9ed0, transparent: true, opacity: 0.88 })
+        new T.MeshStandardMaterial({
+          color: 0x3f9ed0, transparent: true, opacity: 0.88,
+          roughness: 0.05, metalness: 0.1,           // glassy water
+          envMapIntensity: 1.4                       // pull in extra sky reflection
+        })
       );
       pool.position.y = 0.24; g.add(pool);
       // Coping band
       const coping = new T.Mesh(
         new T.BoxGeometry(11.6, 0.28, 7.6),
-        new T.MeshStandardMaterial({ color: 0xe8e0c8 })
+        new T.MeshStandardMaterial({ color: 0xe8e0c8, map: stoneTex, roughness: 0.9, metalness: 0 })
       );
       coping.position.y = 0.235; g.add(coping);
       pool.position.y = 0.25;
@@ -2099,7 +2103,10 @@ const PLACEABLES = {
       shell.position.y = 0.6; shell.castShadow = true; g.add(shell);
       const water = new T.Mesh(
         new T.CylinderGeometry(1.55, 1.55, 0.1, 16),
-        new T.MeshStandardMaterial({ color: 0x4fa8c8, transparent: true, opacity: 0.8 })
+        new T.MeshStandardMaterial({
+          color: 0x4fa8c8, transparent: true, opacity: 0.8,
+          roughness: 0.05, metalness: 0.1, envMapIntensity: 1.4
+        })
       );
       water.position.y = 1.15; g.add(water);
       return g;
