@@ -1205,7 +1205,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v78</div>
+<div id="version">v79</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -5120,6 +5120,26 @@ function animate() {
   renderer.render(scene, camera);
 }
 animate();
+
+// ============================================================
+// Environment map — one-time PMREM bake of the sky so glass and
+// metallic surfaces reflect the sky/horizon instead of looking
+// flatly painted. Done after first frame so the scene is ready.
+// ============================================================
+requestAnimationFrame(() => {
+  try {
+    const pmrem = new T.PMREMGenerator(renderer);
+    pmrem.compileEquirectangularShader();
+    // Hide point-bright objects so they don't bake as harsh hotspots in
+    // the reflection probe; the gradient sky alone is enough.
+    const wasSunDisc = sunDisc.visible, wasHalo = sunHalo.visible;
+    sunDisc.visible = false; sunHalo.visible = false;
+    const envRT = pmrem.fromScene(scene, 0.04, 1, 600);
+    sunDisc.visible = wasSunDisc; sunHalo.visible = wasHalo;
+    scene.environment = envRT.texture;
+    pmrem.dispose();
+  } catch (e) { /* env map is a polish, not load-bearing */ }
+});
 
 // ============================================================
 // Sun-time slider wiring + persistence

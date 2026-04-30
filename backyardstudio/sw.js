@@ -1,6 +1,6 @@
 // Backyard Studio service worker — offline support.
 // Bump CACHE when you ship a new HTML build so clients refresh.
-const CACHE = 'backyard-studio-v78';
+const CACHE = 'backyard-studio-v79';
 
 const PRECACHE = [
   './',
