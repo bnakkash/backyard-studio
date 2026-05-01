@@ -651,6 +651,53 @@
     overflow-y: auto;
   }
   #help-overlay[hidden] { display: none; }
+  /* Radial long-press menu — appears centered on the press point */
+  #radial-menu {
+    position: fixed;
+    inset: 0;
+    z-index: 55;
+    pointer-events: auto;
+  }
+  #radial-menu[hidden] { display: none; }
+  #radial-menu .radial-bg {
+    position: absolute;
+    inset: 0;
+    background: rgba(5, 8, 4, 0.35);
+  }
+  #radial-menu .radial-ring {
+    position: absolute;
+    width: 0; height: 0;
+    /* JS sets left/top to the press point */
+  }
+  #radial-menu .radial-item {
+    position: absolute;
+    width: 64px; height: 64px;
+    margin-left: -32px; margin-top: -32px;
+    border-radius: 50%;
+    border: 1px solid var(--border-hi);
+    background: rgba(28, 33, 24, 0.92);
+    color: var(--text);
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    gap: 1px;
+    cursor: pointer;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.45);
+    transform: scale(0.4);
+    opacity: 0;
+    transition: transform 0.16s cubic-bezier(0.2, 1.4, 0.4, 1), opacity 0.14s;
+  }
+  #radial-menu.open .radial-item { transform: scale(1); opacity: 1; }
+  #radial-menu .radial-item:hover { border-color: var(--accent); background: rgba(40, 48, 34, 0.95); }
+  #radial-menu .radial-item:active { transform: scale(0.92); }
+  #radial-menu .radial-icon { font-size: 22px; line-height: 1; }
+  #radial-menu .radial-label {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.1em;
+    color: var(--text-dim);
+    text-transform: uppercase;
+  }
   .help-card {
     background: var(--panel);
     border: 1px solid var(--border);
@@ -1134,12 +1181,32 @@
   <button class="badge-close" id="mode-close" aria-label="Exit mode">✕</button>
 </div>
 
-<div id="sun-bar" class="panel">
+<div id="sun-bar" class="panel" hidden>
   <span class="sun-icon">☀</span>
   <span class="sun-time" id="sun-time">12:00 PM</span>
   <input type="range" id="sun-slider" class="sun-slider" min="6" max="20" step="0.1" value="12">
   <button class="sun-now" id="sun-play" type="button" aria-label="Play day cycle" title="Play day cycle">▶</button>
   <button class="sun-now" id="sun-now" type="button">Now</button>
+  <button class="sun-now" id="sun-close" type="button" aria-label="Hide sun bar" title="Hide">✕</button>
+</div>
+
+<!-- Radial long-press menu -->
+<div id="radial-menu" hidden>
+  <div class="radial-bg"></div>
+  <div class="radial-ring">
+    <button class="radial-item" data-action="place"  type="button" aria-label="Place item here">
+      <span class="radial-icon">＋</span><span class="radial-label">Place</span>
+    </button>
+    <button class="radial-item" data-action="walk"   type="button" aria-label="Walk to here">
+      <span class="radial-icon">🚶</span><span class="radial-label">Walk</span>
+    </button>
+    <button class="radial-item" data-action="focus"  type="button" aria-label="Focus camera here">
+      <span class="radial-icon">◎</span><span class="radial-label">Focus</span>
+    </button>
+    <button class="radial-item" data-action="cancel" type="button" aria-label="Cancel">
+      <span class="radial-icon">✕</span><span class="radial-label">Cancel</span>
+    </button>
+  </div>
 </div>
 
 <div id="left-panel" class="panel">
@@ -1150,6 +1217,7 @@
       <a href="polygon-tracer.html">Photo</a>
       <a href="trace.html">Walk</a>
       <a href="#" id="edit-yard-link">Edit</a>
+      <a href="#" id="sun-toggle-link">☀ Sun &amp; Time</a>
     </div>
   </div>
   <div class="palette" id="palette"></div>
@@ -1229,7 +1297,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v87</div>
+<div id="version">v88</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2914,6 +2982,16 @@ catOrder.forEach(cat => {
       </div>
     `;
     el.addEventListener('click', () => {
+      // Radial-menu express path: long-press → Place pre-armed a target
+      // point. Picking any non-path item now drops it directly at that
+      // point instead of entering normal placement mode.
+      if (typeof _pendingRadialPlace !== 'undefined' && _pendingRadialPlace && !PLACEABLES[key].pathStep) {
+        const at = _pendingRadialPlace;
+        _pendingRadialPlace = null;
+        placeItem(key, at.x, at.z);
+        if (typeof isMobile === 'function' && isMobile() && typeof closeDrawer === 'function') closeDrawer();
+        return;
+      }
       if (selectedKind === key) {
         selectedKind = null;
         el.classList.remove('active');
@@ -4914,6 +4992,131 @@ document.getElementById('setting-invert-mouse-y').addEventListener('change', (e)
   settings.invertMouseY = e.target.checked;
   saveSettings();
 });
+
+// ============================================================
+// Radial long-press menu — hold a spot to surface place/walk/focus.
+// ============================================================
+const radialEl = document.getElementById('radial-menu');
+const radialRing = radialEl.querySelector('.radial-ring');
+const radialItems = Array.from(radialEl.querySelectorAll('.radial-item'));
+let _longPressTimer = null;
+let _longPressStart = null;
+const LONG_PRESS_MS = 500;
+const LONG_PRESS_MAX_MOVE = 8;
+let _radialAt = null;            // {x, z} ground point under the press
+let _pendingRadialPlace = null;  // {x, z}: armed by 'Place' action; consumed on next palette-item tap
+
+function _radialEligible() {
+  // Don't fire in modes that already own the gesture.
+  return !walkMode && !yardEditMode && !pathMode && !selectedKind && !dragItem;
+}
+function openRadialMenu(screenX, screenY) {
+  // Pick ground point first; if the press isn't over the yard, do nothing.
+  const fakeEvt = { clientX: screenX, clientY: screenY };
+  const pt = groundPick(fakeEvt);
+  if (!pt) return;
+  _radialAt = { x: pt.x, z: pt.z };
+  // Position the ring center
+  radialRing.style.left = screenX + 'px';
+  radialRing.style.top  = screenY + 'px';
+  // Place 4 items in a circle. Top, right, bottom, left at 90° intervals,
+  // starting straight up.
+  const R = 78; // px from center
+  radialItems.forEach((el, i) => {
+    const ang = (i / radialItems.length) * Math.PI * 2 - Math.PI / 2;
+    el.style.left = (Math.cos(ang) * R) + 'px';
+    el.style.top  = (Math.sin(ang) * R) + 'px';
+  });
+  radialEl.hidden = false;
+  // Force layout, then add 'open' so the items animate in.
+  void radialEl.offsetWidth;
+  radialEl.classList.add('open');
+  // Suppress the touchend that follows from triggering a tap-to-place.
+  didDrag = true;
+  haptic && haptic(8);
+}
+function closeRadialMenu() {
+  radialEl.classList.remove('open');
+  // Wait for animation, then hide so it's non-interactive.
+  setTimeout(() => { radialEl.hidden = true; }, 160);
+  _radialAt = null;
+}
+radialEl.querySelector('.radial-bg').addEventListener('click', closeRadialMenu);
+radialEl.querySelector('.radial-bg').addEventListener('touchend', (e) => { e.preventDefault(); closeRadialMenu(); }, { passive: false });
+radialItems.forEach(el => {
+  el.addEventListener('click', () => {
+    const action = el.dataset.action;
+    const at = _radialAt;
+    closeRadialMenu();
+    if (!at && action !== 'cancel') return;
+    if (action === 'place') {
+      _pendingRadialPlace = at;
+      openDrawer();
+      toast('Pick an item to drop here');
+    } else if (action === 'walk') {
+      if (!walkMode) enterWalkMode();
+      teleportWalkTo(at.x, at.z);
+    } else if (action === 'focus') {
+      target.set(at.x, 0, at.z);
+      updateCam();
+    } // cancel: just close
+  });
+});
+
+// Long-press detection on the canvas. Only fires when no other mode owns
+// the gesture, and only when finger barely moves.
+canvas.addEventListener('touchstart', (e) => {
+  if (e.touches.length !== 1 || !_radialEligible()) return;
+  const t = e.touches[0];
+  _longPressStart = { x: t.clientX, y: t.clientY };
+  if (_longPressTimer) clearTimeout(_longPressTimer);
+  _longPressTimer = setTimeout(() => {
+    _longPressTimer = null;
+    if (_longPressStart) openRadialMenu(_longPressStart.x, _longPressStart.y);
+  }, LONG_PRESS_MS);
+}, { passive: true });
+canvas.addEventListener('touchmove', (e) => {
+  if (!_longPressStart || !_longPressTimer) return;
+  const t = e.touches[0];
+  if (!t) return;
+  if (Math.hypot(t.clientX - _longPressStart.x, t.clientY - _longPressStart.y) > LONG_PRESS_MAX_MOVE) {
+    clearTimeout(_longPressTimer); _longPressTimer = null;
+  }
+}, { passive: true });
+canvas.addEventListener('touchend', () => {
+  if (_longPressTimer) { clearTimeout(_longPressTimer); _longPressTimer = null; }
+  _longPressStart = null;
+}, { passive: true });
+// Desktop: right-click also opens the radial menu at the cursor.
+canvas.addEventListener('contextmenu', (e) => {
+  if (!_radialEligible()) return;
+  e.preventDefault();
+  openRadialMenu(e.clientX, e.clientY);
+});
+// Escape closes the menu.
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && !radialEl.hidden) closeRadialMenu();
+});
+
+// ============================================================
+// Sun & Time visibility toggle — slider hidden by default; surfaced
+// from the hamburger drawer.
+// ============================================================
+const sunBarEl = document.getElementById('sun-bar');
+function setSunBarVisible(v) {
+  sunBarEl.hidden = !v;
+  try { localStorage.setItem('backyard_sun_bar_visible', v ? '1' : '0'); } catch (_) {}
+}
+// Restore last preference (default: hidden).
+try {
+  if (localStorage.getItem('backyard_sun_bar_visible') === '1') sunBarEl.hidden = false;
+} catch (_) {}
+document.getElementById('sun-toggle-link').addEventListener('click', (e) => {
+  e.preventDefault();
+  setSunBarVisible(sunBarEl.hidden);
+  if (typeof closeDrawer === 'function' && isMobile()) closeDrawer();
+});
+document.getElementById('sun-close').addEventListener('click', () => setSunBarVisible(false));
 
 // Clear-all: dispose every placed item and push a history entry so the
 // wipe is undoable. Cancels any pending path session and resets selection.
