@@ -1320,7 +1320,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v90</div>
+<div id="version">v91</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -5097,8 +5097,9 @@ function _radialHitTest(clientX, clientY) {
   });
   return best;
 }
-function executeRadialAction(action) {
-  const at = _radialAt;
+function executeRadialAction(action, at) {
+  // `at` is captured by the caller BEFORE closeRadialMenu nulls _radialAt,
+  // so this stays valid even if the visual close has already happened.
   if (!at && action !== 'cancel') return;
   if (action === 'place') {
     _pendingRadialPlace = at;
@@ -5108,9 +5109,8 @@ function executeRadialAction(action) {
     if (!walkMode) enterWalkMode();
     teleportWalkTo(at.x, at.z);
   } else if (action === 'focus') {
-    // Pull camera in for a closer look at the press point. Half the
-    // default radius (~30 ft) frames a single item nicely without
-    // clipping into objects.
+    // Pull camera in for a closer look at the press point. ~28 ft frames
+    // a single item nicely; min() preserves user's zoom if already closer.
     target.set(at.x, 0, at.z);
     cam.radius = Math.min(cam.radius, 28);
     updateCam();
@@ -5127,8 +5127,9 @@ radialEl.querySelector('.radial-bg').addEventListener('click', closeRadialMenu);
 radialItems.forEach(el => {
   el.addEventListener('click', () => {
     const action = el.dataset.action;
+    const at = _radialAt;        // capture before closeRadialMenu nulls it
     closeRadialMenu();
-    executeRadialAction(action);
+    executeRadialAction(action, at);
   });
 });
 
@@ -5155,8 +5156,9 @@ document.addEventListener('touchend', (e) => {
   // Only fire when ALL fingers are up.
   if (e.touches.length > 0) return;
   const action = _radialArmedAction;
+  const at = _radialAt;          // capture before closeRadialMenu nulls it
   closeRadialMenu();
-  if (action) executeRadialAction(action);
+  if (action) executeRadialAction(action, at);
 }, { capture: true, passive: true });
 
 // Long-press detection on the canvas. Only fires when no other mode owns
