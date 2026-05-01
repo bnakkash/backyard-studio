@@ -726,6 +726,27 @@
   }
   .help-body .setting-row span { color: var(--text-dim); }
   .help-body .setting-row:hover span { color: var(--text); }
+  .help-body .danger-btn {
+    margin-top: 8px;
+    width: 100%;
+    background: rgba(180, 70, 70, 0.12);
+    border: 1px solid rgba(190, 90, 90, 0.55);
+    color: #e8b8b8;
+    padding: 10px 12px;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+  }
+  .help-body .danger-btn:hover { background: rgba(180, 70, 70, 0.22); border-color: rgba(220, 110, 110, 0.85); }
+  .help-body .danger-btn:active { transform: scale(0.98); }
+  .help-body .setting-note {
+    color: var(--text-dim);
+    font-size: 11px;
+    margin: 6px 0 4px;
+    line-height: 1.5;
+  }
   .help-body kbd {
     background: var(--panel-hi);
     border: 1px solid var(--border);
@@ -1088,6 +1109,9 @@
         <input type="checkbox" id="setting-invert-mouse-y">
         <span>Invert mouse drag — vertical only</span>
       </label>
+      <h3>Layout</h3>
+      <button class="danger-btn" id="clear-all-btn" type="button">Clear all placed items</button>
+      <p class="setting-note">Removes everything you've placed (trees, hardscape, structures). Can be undone with the ↶ button.</p>
     </div>
   </div>
 </div>
@@ -4891,6 +4915,34 @@ document.getElementById('setting-invert-mouse').addEventListener('change', (e) =
 document.getElementById('setting-invert-mouse-y').addEventListener('change', (e) => {
   settings.invertMouseY = e.target.checked;
   saveSettings();
+});
+
+// Clear-all: dispose every placed item and push a history entry so the
+// wipe is undoable. Cancels any pending path session and resets selection.
+function clearAllPlaced() {
+  if (placed.length === 0) { toast('Nothing to clear'); return; }
+  if (!confirm('Remove all ' + placed.length + ' placed item' + (placed.length === 1 ? '' : 's') + '? You can undo with the ↶ button.')) return;
+  if (pathMode) resetPath();
+  selectItem(null);
+  // Clone the array because we're going to splice via remove paths.
+  for (const p of placed.slice()) {
+    scene.remove(p.mesh);
+    disposeTree(p.mesh);
+    if (p.outlineWrapper) {
+      scene.remove(p.outlineWrapper);
+      disposeTree(p.outlineWrapper);
+    }
+  }
+  placed.length = 0;
+  pushHistory();
+  refreshModeBadge();
+  toast('Cleared layout');
+}
+document.getElementById('clear-all-btn').addEventListener('click', () => {
+  closeHelp();
+  // Defer the confirm() one frame so the overlay actually closes first
+  // (otherwise on iOS the dialog appears stacked behind the dimmer).
+  requestAnimationFrame(clearAllPlaced);
 });
 // iOS Safari sometimes drops click on home-screen PWAs; bind touch as backup
 compassEl.addEventListener('touchend', (e) => {
