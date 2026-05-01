@@ -598,6 +598,9 @@
     padding: 7px 12px;
     z-index: 10;
   }
+  /* `display: flex` above outranks the browser's [hidden] rule (ID > attr).
+     Re-instate hidden so toggling sunBarEl.hidden actually hides the bar. */
+  #sun-bar[hidden] { display: none !important; }
   #help-btn {
     position: absolute;
     top: calc(16px + var(--safe-top)); right: 88px;
@@ -669,6 +672,19 @@
     width: 0; height: 0;
     /* JS sets left/top to the press point */
   }
+  #radial-menu .radial-center {
+    position: absolute;
+    width: 12px; height: 12px;
+    margin-left: -6px; margin-top: -6px;
+    border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 12px rgba(212, 165, 116, 0.7);
+    pointer-events: none;
+    transform: scale(0.4);
+    opacity: 0;
+    transition: transform 0.16s, opacity 0.14s;
+  }
+  #radial-menu.open .radial-center { transform: scale(1); opacity: 1; }
   #radial-menu .radial-item {
     position: absolute;
     width: 64px; height: 64px;
@@ -1194,6 +1210,7 @@
 <div id="radial-menu" hidden>
   <div class="radial-bg"></div>
   <div class="radial-ring">
+    <span class="radial-center" aria-hidden="true"></span>
     <button class="radial-item" data-action="place"  type="button" aria-label="Place item here">
       <span class="radial-icon">＋</span><span class="radial-label">Place</span>
     </button>
@@ -1297,7 +1314,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v88</div>
+<div id="version">v89</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -5041,8 +5058,12 @@ function closeRadialMenu() {
   setTimeout(() => { radialEl.hidden = true; }, 160);
   _radialAt = null;
 }
+// Use ONLY click — listening to touchend on the backdrop caused the menu
+// to close the instant the long-press finger lifted (which lands on the
+// backdrop, not the canvas where touchstart fired). A click won't fire
+// unless touchstart AND touchend are on the same element, so the menu
+// now stays open until the user explicitly taps the backdrop or a button.
 radialEl.querySelector('.radial-bg').addEventListener('click', closeRadialMenu);
-radialEl.querySelector('.radial-bg').addEventListener('touchend', (e) => { e.preventDefault(); closeRadialMenu(); }, { passive: false });
 radialItems.forEach(el => {
   el.addEventListener('click', () => {
     const action = el.dataset.action;
