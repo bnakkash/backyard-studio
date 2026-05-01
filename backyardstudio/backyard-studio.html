@@ -704,7 +704,13 @@
     transition: transform 0.16s cubic-bezier(0.2, 1.4, 0.4, 1), opacity 0.14s;
   }
   #radial-menu.open .radial-item { transform: scale(1); opacity: 1; }
-  #radial-menu .radial-item:hover { border-color: var(--accent); background: rgba(40, 48, 34, 0.95); }
+  #radial-menu .radial-item:hover,
+  #radial-menu .radial-item.armed {
+    border-color: var(--accent);
+    background: rgba(212, 165, 116, 0.22);
+    box-shadow: 0 0 0 2px var(--accent), 0 6px 18px rgba(0,0,0,0.55);
+  }
+  #radial-menu.open .radial-item.armed { transform: scale(1.12); }
   #radial-menu .radial-item:active { transform: scale(0.92); }
   #radial-menu .radial-icon { font-size: 22px; line-height: 1; }
   #radial-menu .radial-label {
@@ -1314,7 +1320,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v89</div>
+<div id="version">v90</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -5027,12 +5033,15 @@ function _radialEligible() {
   // Don't fire in modes that already own the gesture.
   return !walkMode && !yardEditMode && !pathMode && !selectedKind && !dragItem;
 }
+let _radialActive = false;
+let _radialArmedAction = null;
 function openRadialMenu(screenX, screenY) {
   // Pick ground point first; if the press isn't over the yard, do nothing.
   const fakeEvt = { clientX: screenX, clientY: screenY };
   const pt = groundPick(fakeEvt);
   if (!pt) return;
   _radialAt = { x: pt.x, z: pt.z };
+  _radialCenter = { x: screenX, y: screenY };
   // Position the ring center
   radialRing.style.left = screenX + 'px';
   radialRing.style.top  = screenY + 'px';
@@ -5043,20 +5052,70 @@ function openRadialMenu(screenX, screenY) {
     const ang = (i / radialItems.length) * Math.PI * 2 - Math.PI / 2;
     el.style.left = (Math.cos(ang) * R) + 'px';
     el.style.top  = (Math.sin(ang) * R) + 'px';
+    el.classList.remove('armed');
   });
   radialEl.hidden = false;
   // Force layout, then add 'open' so the items animate in.
   void radialEl.offsetWidth;
   radialEl.classList.add('open');
-  // Suppress the touchend that follows from triggering a tap-to-place.
+  _radialActive = true;
+  _radialArmedAction = null;
+  // Cancel any in-flight gesture state on the canvas so the existing
+  // touchmove/end handlers don't pan the camera or treat the lift as a tap.
+  touchState = null;
   didDrag = true;
   haptic && haptic(8);
 }
 function closeRadialMenu() {
   radialEl.classList.remove('open');
+  _radialActive = false;
+  _radialArmedAction = null;
+  radialItems.forEach(el => el.classList.remove('armed'));
   // Wait for animation, then hide so it's non-interactive.
   setTimeout(() => { radialEl.hidden = true; }, 160);
   _radialAt = null;
+}
+let _radialCenter = null;
+const RADIAL_DEAD_ZONE = 24; // px — finger inside this radius arms nothing
+const RADIAL_ITEM_HIT  = 60; // px — finger within this radius of an item arms it
+function _radialHitTest(clientX, clientY) {
+  if (!_radialCenter) return null;
+  const dx = clientX - _radialCenter.x, dy = clientY - _radialCenter.y;
+  const dist = Math.hypot(dx, dy);
+  if (dist < RADIAL_DEAD_ZONE) return null;
+  // 4 items at angles -90, 0, 90, 180 (top, right, bottom, left).
+  // Compute the wedge by angle so the user can fling toward a button
+  // without precisely landing on it.
+  let ang = Math.atan2(dy, dx); // range -π..π
+  // Snap to nearest 4-way wedge centered on item angles
+  const items = radialItems;
+  let best = null, bestDelta = Infinity;
+  items.forEach((el, i) => {
+    const itemAng = (i / items.length) * Math.PI * 2 - Math.PI / 2;
+    let d = Math.abs(((ang - itemAng + Math.PI * 3) % (Math.PI * 2)) - Math.PI);
+    if (d < bestDelta) { bestDelta = d; best = el; }
+  });
+  return best;
+}
+function executeRadialAction(action) {
+  const at = _radialAt;
+  if (!at && action !== 'cancel') return;
+  if (action === 'place') {
+    _pendingRadialPlace = at;
+    openDrawer();
+    toast('Pick an item to drop here');
+  } else if (action === 'walk') {
+    if (!walkMode) enterWalkMode();
+    teleportWalkTo(at.x, at.z);
+  } else if (action === 'focus') {
+    // Pull camera in for a closer look at the press point. Half the
+    // default radius (~30 ft) frames a single item nicely without
+    // clipping into objects.
+    target.set(at.x, 0, at.z);
+    cam.radius = Math.min(cam.radius, 28);
+    updateCam();
+  }
+  // 'cancel' or unknown: just close.
 }
 // Use ONLY click — listening to touchend on the backdrop caused the menu
 // to close the instant the long-press finger lifted (which lands on the
@@ -5064,25 +5123,41 @@ function closeRadialMenu() {
 // unless touchstart AND touchend are on the same element, so the menu
 // now stays open until the user explicitly taps the backdrop or a button.
 radialEl.querySelector('.radial-bg').addEventListener('click', closeRadialMenu);
+// Tap-mode: user lifted finger, menu stayed open, then tapped a button.
 radialItems.forEach(el => {
   el.addEventListener('click', () => {
     const action = el.dataset.action;
-    const at = _radialAt;
     closeRadialMenu();
-    if (!at && action !== 'cancel') return;
-    if (action === 'place') {
-      _pendingRadialPlace = at;
-      openDrawer();
-      toast('Pick an item to drop here');
-    } else if (action === 'walk') {
-      if (!walkMode) enterWalkMode();
-      teleportWalkTo(at.x, at.z);
-    } else if (action === 'focus') {
-      target.set(at.x, 0, at.z);
-      updateCam();
-    } // cancel: just close
+    executeRadialAction(action);
   });
 });
+
+// Marking-menu drag-to-select: while the long-press finger is still down,
+// follow it via document touchmove (capture phase so we run before the
+// canvas's existing handlers), highlight whichever button it hovers over,
+// and on lift execute that button's action. Lifting in the dead zone
+// (no button armed) just closes the menu.
+document.addEventListener('touchmove', (e) => {
+  if (!_radialActive) return;
+  const t = e.touches[0];
+  if (!t) return;
+  const armed = _radialHitTest(t.clientX, t.clientY);
+  if (armed) {
+    radialItems.forEach(b => b.classList.toggle('armed', b === armed));
+    _radialArmedAction = armed.dataset.action;
+  } else {
+    radialItems.forEach(b => b.classList.remove('armed'));
+    _radialArmedAction = null;
+  }
+}, { capture: true, passive: true });
+document.addEventListener('touchend', (e) => {
+  if (!_radialActive) return;
+  // Only fire when ALL fingers are up.
+  if (e.touches.length > 0) return;
+  const action = _radialArmedAction;
+  closeRadialMenu();
+  if (action) executeRadialAction(action);
+}, { capture: true, passive: true });
 
 // Long-press detection on the canvas. Only fires when no other mode owns
 // the gesture, and only when finger barely moves.
