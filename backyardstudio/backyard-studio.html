@@ -1374,7 +1374,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v97</div>
+<div id="version">v98</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3657,23 +3657,32 @@ function duplicateSelected() {
   toast(`Duplicated · ${PLACEABLES[k].name}`);
 }
 
-// Compute the world-space axis-aligned XZ size of an item's mesh,
-// excluding the contact-shadow disc (would inflate the bbox). Cached
-// per (scale, rotation) so repeated calls during a drag don't re-traverse.
+// Compute the world-space axis-aligned XZ size of an item's mesh.
+// Three.js Box3.setFromObject does NOT skip invisible children — it
+// reads geometry.boundingBox regardless — so a previous "hide then
+// setFromObject" approach silently included the contact-shadow plane,
+// which is sized to ~110% of the larger horizontal dimension. That
+// inflated the bbox and made tiling/snapping leave a visible gap. We
+// now traverse manually and skip any child flagged as contact shadow.
+// Cached per (scale, rotation) so repeated calls during a drag don't
+// re-traverse the (potentially deep) hierarchy.
 const _bboxScratch = new T.Box3();
+const _bboxTmp = new T.Box3();
 function getItemSizeXZ(item) {
   if (!item || !item.mesh) return { x: 1, z: 1 };
   const cacheKey = item.mesh.scale.x.toFixed(3) + '_' + item.mesh.rotation.y.toFixed(3);
   if (item._cachedSize && item._cachedSizeKey === cacheKey) return item._cachedSize;
-  const prevContactVis = [];
+  item.mesh.updateMatrixWorld(true);
+  _bboxScratch.makeEmpty();
   item.mesh.traverse(o => {
-    if (o.userData && o.userData.isContactShadow) {
-      prevContactVis.push([o, o.visible]);
-      o.visible = false;
+    if (o.userData && o.userData.isContactShadow) return; // skip ground discs
+    if (o.isMesh && o.geometry) {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      _bboxTmp.copy(o.geometry.boundingBox).applyMatrix4(o.matrixWorld);
+      _bboxScratch.union(_bboxTmp);
     }
   });
-  _bboxScratch.setFromObject(item.mesh);
-  prevContactVis.forEach(([o, v]) => o.visible = v);
+  if (_bboxScratch.isEmpty()) return { x: 1, z: 1 };
   const result = {
     x: Math.max(0.4, _bboxScratch.max.x - _bboxScratch.min.x),
     z: Math.max(0.4, _bboxScratch.max.z - _bboxScratch.min.z)
