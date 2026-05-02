@@ -1320,7 +1320,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v92</div>
+<div id="version">v93</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -4226,11 +4226,16 @@ canvas.addEventListener('mousedown', e => {
   if (e.button === 0) {
     mouseState = 'left';
     if (!selectedKind) {
-      const hit = pickPlaced(e);
-      // Only the already-selected item is grabbable for drag. New items
-      // get selected on tap-release. This stops the camera pan from being
-      // hijacked into moving whatever happened to be under your cursor.
-      if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
+      // If something is already selected, drag from anywhere moves it.
+      // Otherwise restrict drag to the item itself so camera pans don't
+      // accidentally pick up a placed item under the cursor.
+      if (selection) {
+        dragItem = selection;
+        captureDragOffsets();
+      } else {
+        const hit = pickPlaced(e);
+        if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
+      }
     }
   } else if (e.button === 1) {
     // Middle-click drag on a selected item rotates it. Browsers default
@@ -4507,12 +4512,20 @@ canvas.addEventListener('touchstart', e => {
     didDrag = false;
     dragVel.x = 0; dragVel.y = 0;
     if (!selectedKind) {
-      // Only the already-selected item is grabbable for drag. New items
-      // get selected on tap-release. This stops a camera pan from being
-      // hijacked into moving whatever the touch happened to start on top of —
-      // the worst UX bug when the yard is dense.
-      const hit = pickPlaced(t);
-      if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
+      // If there's a current selection, allow dragging from anywhere on
+      // the canvas to move it — not just from directly on top of the item.
+      // This is much easier on a phone where small items are hard to
+      // grab. A tap with no drag still falls through to the deselect-on-
+      // empty branch in touchend.
+      if (selection) {
+        dragItem = selection;
+        captureDragOffsets();
+      } else {
+        // No selection yet: fall back to the strict "must touch the item
+        // itself" rule so a camera pan over a dense yard isn't hijacked.
+        const hit = pickPlaced(t);
+        if (hit && selectionSet.has(hit)) { dragItem = hit; captureDragOffsets(); }
+      }
     }
     touchState = 'one';
   } else if (e.touches.length === 2) {
@@ -4562,10 +4575,12 @@ canvas.addEventListener('touchmove', e => {
         // Velocity classifier: a fast first-move (>500 px/s) is intent-to-pan,
         // not intent-to-drag-this-item. Drop the dragItem candidate so the
         // user's flick pans the camera even if the touch happened to start
-        // on top of an item.
+        // on top of an item. Skip this when dragItem is the active selection
+        // — the user explicitly chose to manipulate it, so even a fast drag
+        // should move the object, not the camera.
         const elapsed = Math.max(1, performance.now() - dragStart.t);
         const speed = moved / elapsed; // px / ms
-        if (speed > 0.5 && dragItem) dragItem = null;
+        if (speed > 0.5 && dragItem && dragItem !== selection) dragItem = null;
       }
     }
     if (dragItem && didDrag) {
