@@ -1277,6 +1277,13 @@
       <button class="btn" id="duplicate-btn">Duplicate</button>
       <button class="btn danger" id="delete-btn">Remove</button>
     </div>
+    <div class="field" style="margin-top:8px"><span>Tile in direction</span></div>
+    <div class="btn-row">
+      <button class="btn icon-btn" id="dup-west"  title="Duplicate snapped to west edge"  aria-label="Duplicate west">←</button>
+      <button class="btn icon-btn" id="dup-north" title="Duplicate snapped to north edge" aria-label="Duplicate north">↑</button>
+      <button class="btn icon-btn" id="dup-south" title="Duplicate snapped to south edge" aria-label="Duplicate south">↓</button>
+      <button class="btn icon-btn" id="dup-east"  title="Duplicate snapped to east edge"  aria-label="Duplicate east">→</button>
+    </div>
   </div>
   <div class="section">
     <div class="section-label">Layout</div>
@@ -1320,7 +1327,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v93</div>
+<div id="version">v94</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3154,8 +3161,59 @@ function captureDragOffsets() {
     });
   }
 }
+// Threshold in feet for snapping the dragged item's edges flush with
+// another placed item's edges or center axis. Generous enough to feel
+// magnetic without being sticky during free placement.
+const OBJECT_SNAP_FT = 0.6;
+function _snapDragToObjects(x, z) {
+  if (!dragItem || dragOffsets.length > 0) return { x, z }; // skip when group-dragging
+  // Build XZ bbox for dragItem at the candidate position. setFromObject
+  // currently reflects the actual mesh position; we want the *candidate*
+  // position, so derive size once and shift.
+  const sz = getItemSizeXZ(dragItem);
+  let bestDx = 0, bestDxAbs = OBJECT_SNAP_FT + 1;
+  let bestDz = 0, bestDzAbs = OBJECT_SNAP_FT + 1;
+  // Candidate edges in world coords
+  const minX = x - sz.x / 2, maxX = x + sz.x / 2, cX = x;
+  const minZ = z - sz.z / 2, maxZ = z + sz.z / 2, cZ = z;
+  for (const it of placed) {
+    if (it === dragItem) continue;
+    const oSz = getItemSizeXZ(it);
+    const ox = it.mesh.position.x, oz = it.mesh.position.z;
+    const oMinX = ox - oSz.x / 2, oMaxX = ox + oSz.x / 2;
+    const oMinZ = oz - oSz.z / 2, oMaxZ = oz + oSz.z / 2;
+    // X-axis snap candidates: align edges or centers, plus edge-to-edge
+    // (touching) on either side.
+    const xCandidates = [
+      [oMinX,         minX], [oMaxX,         maxX], // edge↔edge same side
+      [ox,             cX],                          // center↔center
+      [oMinX,         maxX], [oMaxX,         minX]  // touch (right edge of A = left edge of B)
+    ];
+    for (const [target, current] of xCandidates) {
+      const d = target - current;
+      if (Math.abs(d) < bestDxAbs) { bestDx = d; bestDxAbs = Math.abs(d); }
+    }
+    const zCandidates = [
+      [oMinZ, minZ], [oMaxZ, maxZ],
+      [oz,     cZ],
+      [oMinZ, maxZ], [oMaxZ, minZ]
+    ];
+    for (const [target, current] of zCandidates) {
+      const d = target - current;
+      if (Math.abs(d) < bestDzAbs) { bestDz = d; bestDzAbs = Math.abs(d); }
+    }
+  }
+  return {
+    x: bestDxAbs <= OBJECT_SNAP_FT ? x + bestDx : x,
+    z: bestDzAbs <= OBJECT_SNAP_FT ? z + bestDz : z
+  };
+}
 function applyDragMove(newX, newZ) {
-  const sx = snap(newX), sz = snap(newZ);
+  // First quantize to grid (if snap-to-grid is on), then magnetically
+  // align with nearby placed items so rows of pavers/beds line up.
+  let sx = snap(newX), sz = snap(newZ);
+  const objSnap = _snapDragToObjects(sx, sz);
+  sx = objSnap.x; sz = objSnap.z;
   dragItem.mesh.position.x = sx;
   dragItem.mesh.position.z = sz;
   if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
@@ -3520,6 +3578,62 @@ function duplicateSelected() {
   toast(`Duplicated · ${PLACEABLES[k].name}`);
 }
 
+// Compute the world-space axis-aligned XZ size of an item's mesh,
+// excluding the contact-shadow disc (would inflate the bbox). Cached
+// per (scale, rotation) so repeated calls during a drag don't re-traverse.
+const _bboxScratch = new T.Box3();
+function getItemSizeXZ(item) {
+  if (!item || !item.mesh) return { x: 1, z: 1 };
+  const cacheKey = item.mesh.scale.x.toFixed(3) + '_' + item.mesh.rotation.y.toFixed(3);
+  if (item._cachedSize && item._cachedSizeKey === cacheKey) return item._cachedSize;
+  const prevContactVis = [];
+  item.mesh.traverse(o => {
+    if (o.userData && o.userData.isContactShadow) {
+      prevContactVis.push([o, o.visible]);
+      o.visible = false;
+    }
+  });
+  _bboxScratch.setFromObject(item.mesh);
+  prevContactVis.forEach(([o, v]) => o.visible = v);
+  const result = {
+    x: Math.max(0.4, _bboxScratch.max.x - _bboxScratch.min.x),
+    z: Math.max(0.4, _bboxScratch.max.z - _bboxScratch.min.z)
+  };
+  item._cachedSize = result;
+  item._cachedSizeKey = cacheKey;
+  return result;
+}
+
+// Place a duplicate of the selected item edge-to-edge in `dir`, where dir
+// is a unit vector in world XZ. Useful for "extending" a row of pavers,
+// hedges, beds, etc. without manual fiddling.
+function duplicateInDirection(dx, dz) {
+  if (!selection) { toast('Select an item to duplicate'); return; }
+  const size = getItemSizeXZ(selection);
+  // Shift by the bbox size along the axis of the direction vector. Diagonal
+  // directions split half-half, but our buttons only emit cardinal vectors.
+  const ox = dx * size.x;
+  const oz = dz * size.z;
+  const k = selection.kind;
+  const mesh = PLACEABLES[k].build();
+  mesh.position.set(
+    selection.mesh.position.x + ox,
+    0,
+    selection.mesh.position.z + oz
+  );
+  mesh.rotation.y = selection.mesh.rotation.y;
+  mesh.scale.setScalar(selection.mesh.scale.x);
+  if (PLACEABLES[k].category === 'Plants') jitterPlantColors(mesh);
+  mesh.add(makeContactShadow(mesh));
+  scene.add(mesh);
+  const item = { kind: k, mesh };
+  placed.push(item);
+  selectItem(item);
+  pushHistory();
+  haptic(10);
+  toast(`Tiled · ${PLACEABLES[k].name}`);
+}
+
 // ============================================================
 // Export PNG (download a screenshot of the current view)
 // ============================================================
@@ -3697,6 +3811,12 @@ function setSelectionSheetVisible(visible) {
 
 document.getElementById('delete-btn').addEventListener('click', deleteSelected);
 document.getElementById('duplicate-btn').addEventListener('click', duplicateSelected);
+// Tile-in-direction: place adjacent copy edge-to-edge, oriented to N/S/E/W.
+// Note: top-down view is +Z = south (front), -Z = north (back).
+document.getElementById('dup-east' ).addEventListener('click', () => duplicateInDirection( 1,  0));
+document.getElementById('dup-west' ).addEventListener('click', () => duplicateInDirection(-1,  0));
+document.getElementById('dup-north').addEventListener('click', () => duplicateInDirection( 0, -1));
+document.getElementById('dup-south').addEventListener('click', () => duplicateInDirection( 0,  1));
 
 // Animate the camera target onto the selected item over ~350ms (ease-out
 // cubic). On a busy yard you can lose track of what you just selected;
