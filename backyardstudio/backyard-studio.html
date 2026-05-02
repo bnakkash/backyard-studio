@@ -666,26 +666,29 @@
   #tile-handles[hidden] { display: none; }
   #tile-handles .tile-handle {
     position: absolute;
-    width: 38px; height: 38px;
-    margin-left: -19px; margin-top: -19px;
+    width: 24px; height: 24px;
+    margin-left: -12px; margin-top: -12px;
     border-radius: 50%;
-    background: rgba(28, 33, 24, 0.92);
-    border: 1px solid var(--accent);
-    color: var(--accent);
+    background: rgba(28, 33, 24, 0.55);
+    border: 1px solid rgba(212, 165, 116, 0.55);
+    color: rgba(212, 165, 116, 0.85);
     font-family: 'JetBrains Mono', monospace;
-    font-size: 17px;
+    font-size: 12px;
     line-height: 1;
+    padding: 0;
     display: flex; align-items: center; justify-content: center;
     cursor: pointer;
     pointer-events: auto;
-    backdrop-filter: blur(6px);
-    -webkit-backdrop-filter: blur(6px);
-    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
-    transition: transform 0.12s, background 0.12s;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.3);
+    transition: transform 0.12s, background 0.12s, opacity 0.12s;
+    opacity: 0.7;
   }
   #tile-handles .tile-handle:hover {
-    background: rgba(212, 165, 116, 0.22);
-    transform: scale(1.1) translate(0, 0);
+    background: rgba(212, 165, 116, 0.28);
+    border-color: var(--accent);
+    color: var(--accent);
+    opacity: 1;
+    transform: scale(1.18);
   }
   #tile-handles .tile-handle:active { transform: scale(0.92); }
   /* Radial long-press menu — appears centered on the press point */
@@ -1371,7 +1374,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v96</div>
+<div id="version">v97</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3708,13 +3711,16 @@ function updateTileHandles() {
   const cx = selection.mesh.position.x;
   const cz = selection.mesh.position.z;
   // Hover the handle a touch above ground so a tall tree's bbox doesn't
-  // bury the icon. Use 1ft, clamped against item height.
+  // bury the icon. Push the handle outward past the bbox edge so it
+  // floats off the object instead of overlapping its silhouette.
   const hy = 0.6;
+  const padX = Math.max(1.2, sz.x * 0.18);
+  const padZ = Math.max(1.2, sz.z * 0.18);
   const dirs = {
-    east:  [cx + sz.x / 2, hy, cz],
-    west:  [cx - sz.x / 2, hy, cz],
-    north: [cx, hy, cz - sz.z / 2],
-    south: [cx, hy, cz + sz.z / 2]
+    east:  [cx + sz.x / 2 + padX, hy, cz],
+    west:  [cx - sz.x / 2 - padX, hy, cz],
+    north: [cx, hy, cz - sz.z / 2 - padZ],
+    south: [cx, hy, cz + sz.z / 2 + padZ]
   };
   let anyVisible = false;
   for (const [dir, [x, y, z]] of Object.entries(dirs)) {
@@ -3885,13 +3891,24 @@ function snapRotationToQuarter(rad) {
 }
 function applyRotationToSelection(rad, opts) {
   if (!selection) return;
-  // Skip the snap when commit:true (slider/preset commits absolute values).
+  // Save the un-snapped target on the mesh's userData so subsequent twist
+  // deltas accumulate through the snap dead zone. Without this, every
+  // gesture frame would re-read the already-snapped mesh.rotation.y and
+  // small twists would never break free of the detent.
+  selection.mesh.userData._rotIntent = rad;
   const snapped = (opts && opts.skipSnap) ? rad : snapRotationToQuarter(rad);
   selection.mesh.rotation.y = snapped;
   const deg = Math.round(((snapped * 180 / Math.PI) % 360 + 360) % 360);
   document.getElementById('rot-slider').value = deg;
   document.getElementById('rot-value').textContent = deg + '°';
   if (opts && opts.commit) pushHistory();
+}
+// Read the rotation that gestures should accumulate from — the unsnapped
+// intent if present, else the snapped mesh value.
+function getRotationIntent() {
+  if (!selection) return 0;
+  const u = selection.mesh.userData._rotIntent;
+  return (u != null) ? u : selection.mesh.rotation.y;
 }
 function applyScaleToSelection(scale, opts) {
   if (!selection) return;
@@ -4636,7 +4653,7 @@ canvas.addEventListener('mousemove', e => {
     if (selection) {
       // Horizontal middle-mouse drag rotates the selection. ~360° per
       // full window-width drag at 1024px wide.
-      applyRotationToSelection(selection.mesh.rotation.y + dx * 0.0061);
+      applyRotationToSelection(getRotationIntent() + dx * 0.0061);
     }
   } else if (mouseState === 'right') {
     const speed = cam.radius * 0.0018;
@@ -4949,7 +4966,7 @@ canvas.addEventListener('touchmove', e => {
     // out from under the fingers, both major sources of "doesn't feel right."
     if (twoFingerMode === 'twist' && lastTouchAngle !== null) {
       if (onSelected) {
-        applyRotationToSelection(selection.mesh.rotation.y - dAngle);
+        applyRotationToSelection(getRotationIntent() - dAngle);
       } else {
         if (!_twistPivot) {
           _twistPivot = groundPick({ clientX: center.x, clientY: center.y })
