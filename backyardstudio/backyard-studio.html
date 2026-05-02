@@ -1327,7 +1327,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v94</div>
+<div id="version">v95</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1738,6 +1738,25 @@ yard.rotation.x = -Math.PI / 2;
 yard.position.set(0, 0, 0);
 yard.receiveShadow = true;
 scene.add(yard);
+
+// Snap-guide lines: thin accent-colored strips drawn on the ground when
+// a drag is actively snapping to another object's edge/center on the X
+// or Z axis. Hidden by default.
+const _snapGuideMat = new T.MeshBasicMaterial({
+  color: 0xd4a574, transparent: true, opacity: 0.7, depthWrite: false, fog: false
+});
+const _snapGuideX = new T.Mesh(new T.PlaneGeometry(0.08, 220), _snapGuideMat);
+_snapGuideX.rotation.x = -Math.PI / 2;
+_snapGuideX.position.y = 0.04;
+_snapGuideX.visible = false;
+scene.add(_snapGuideX);
+const _snapGuideZ = new T.Mesh(new T.PlaneGeometry(0.08, 220), _snapGuideMat);
+_snapGuideZ.rotation.x = -Math.PI / 2;
+_snapGuideZ.rotation.z = Math.PI / 2;
+_snapGuideZ.position.y = 0.04;
+_snapGuideZ.visible = false;
+scene.add(_snapGuideZ);
+function _hideSnapGuides() { _snapGuideX.visible = false; _snapGuideZ.visible = false; }
 
 // Build the fence outline as a raised rim along the polygon edges,
 // SKIPPING the segments where the back of the house meets the yard.
@@ -3205,7 +3224,9 @@ function _snapDragToObjects(x, z) {
   }
   return {
     x: bestDxAbs <= OBJECT_SNAP_FT ? x + bestDx : x,
-    z: bestDzAbs <= OBJECT_SNAP_FT ? z + bestDz : z
+    z: bestDzAbs <= OBJECT_SNAP_FT ? z + bestDz : z,
+    xSnapped: bestDxAbs <= OBJECT_SNAP_FT,
+    zSnapped: bestDzAbs <= OBJECT_SNAP_FT
   };
 }
 function applyDragMove(newX, newZ) {
@@ -3214,6 +3235,17 @@ function applyDragMove(newX, newZ) {
   let sx = snap(newX), sz = snap(newZ);
   const objSnap = _snapDragToObjects(sx, sz);
   sx = objSnap.x; sz = objSnap.z;
+  // Surface snap-guide lines so the user can see what's locking onto.
+  if (objSnap.xSnapped) {
+    _snapGuideX.position.x = sx;
+    _snapGuideX.position.z = sz;
+    _snapGuideX.visible = true;
+  } else _snapGuideX.visible = false;
+  if (objSnap.zSnapped) {
+    _snapGuideZ.position.x = sx;
+    _snapGuideZ.position.z = sz;
+    _snapGuideZ.visible = true;
+  } else _snapGuideZ.visible = false;
   dragItem.mesh.position.x = sx;
   dragItem.mesh.position.z = sz;
   if (dragItem.outlineWrapper) dragItem.outlineWrapper.position.copy(dragItem.mesh.position);
@@ -4425,6 +4457,7 @@ window.addEventListener('mouseup', e => {
   }
   mouseState = null;
   dragItem = null;
+  _hideSnapGuides();
 });
 
 canvas.addEventListener('mousemove', e => {
@@ -4919,6 +4952,7 @@ canvas.addEventListener('touchend', e => {
     if (twoFingerEndingOnSelection) pushHistory();
     touchState = null;
     dragItem = null;
+    _hideSnapGuides();
     lastTouchDist = null;
     lastTouchCenter = null;
     lastTouchAngle = null;
@@ -4928,6 +4962,7 @@ canvas.addEventListener('touchend', e => {
 canvas.addEventListener('touchcancel', () => {
   touchState = null;
   dragItem = null;
+  _hideSnapGuides();
   didDrag = false;
   lastTouchDist = null;
   lastTouchCenter = null;
