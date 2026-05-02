@@ -1320,7 +1320,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v91</div>
+<div id="version">v92</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2545,32 +2545,32 @@ const PLACEABLES = {
     name: 'Orange Tree', category: 'Plants', icon: '🍊', footprint: 'Citrus, ~12 ft tall',
     build: () => {
       const orangeMat = new T.MeshStandardMaterial({ color: 0xe08a2e, roughness: 0.65 });
+      // Built directly at full citrus-tree size (~12 ft tall) so the
+      // user-visible scale slider (50%–200%) operates around 1× as
+      // expected. Numbers are 5× the previous build-then-scale params.
       const tree = _buildBranchTree({
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }),
         folMats: [
           new T.MeshStandardMaterial({ color: 0x355d2e, flatShading: true }),
           new T.MeshStandardMaterial({ color: 0x4a7a40, flatShading: true })
         ],
-        trunkHeight: 1.0, trunkRadius: [0.26, 0.18],
-        numMain: [4, 5], mainTilt: [0.6, 0.95], mainLength: [1.0, 1.4], mainRadius: 0.1,
-        maxDepth: 3, minLength: 0.3, foliageSize: 0.45, foliageVar: 0.2,
+        trunkHeight: 5.0, trunkRadius: [1.3, 0.9],
+        numMain: [4, 5], mainTilt: [0.6, 0.95], mainLength: [5.0, 7.0], mainRadius: 0.5,
+        maxDepth: 3, minLength: 1.5, foliageSize: 2.25, foliageVar: 1.0,
         tipDecorate: (g, pos) => {
           // Cluster of oranges at each fruiting tip
           const num = 4 + Math.floor(Math.random() * 4);
           for (let j = 0; j < num; j++) {
-            const o = new T.Mesh(new T.SphereGeometry(0.13, 6, 5), orangeMat);
+            const o = new T.Mesh(new T.SphereGeometry(0.65, 6, 5), orangeMat);
             o.position.copy(pos);
-            o.position.x += (Math.random() - 0.5) * 0.7;
-            o.position.y += (Math.random() - 0.5) * 0.5;
-            o.position.z += (Math.random() - 0.5) * 0.7;
+            o.position.x += (Math.random() - 0.5) * 3.5;
+            o.position.y += (Math.random() - 0.5) * 2.5;
+            o.position.z += (Math.random() - 0.5) * 3.5;
             o.castShadow = true;
             g.add(o);
           }
         }
       });
-      // Built small, scaled up so all the branch parameters land at
-      // citrus-tree size (~12 ft tall after the 5× scale).
-      tree.scale.setScalar(5);
       return tree;
     }
   },
