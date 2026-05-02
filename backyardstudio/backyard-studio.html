@@ -691,6 +691,13 @@
     transform: scale(1.18);
   }
   #tile-handles .tile-handle:active { transform: scale(0.92); }
+  #tile-handles .tile-arrow {
+    display: inline-block;
+    transform-origin: center;
+    /* JS sets transform: rotate(...) so the arrow points outward from
+       the object's screen-space center, regardless of camera rotation. */
+    transition: transform 0.1s linear;
+  }
   /* Radial long-press menu — appears centered on the press point */
   #radial-menu {
     position: fixed;
@@ -1253,10 +1260,10 @@
      the selected item's bounding box. Tap one to clone edge-to-edge in
      that direction. Hidden when nothing is selected. -->
 <div id="tile-handles" hidden>
-  <button class="tile-handle" data-tile-dir="east"  type="button" aria-label="Tile east">→</button>
-  <button class="tile-handle" data-tile-dir="west"  type="button" aria-label="Tile west">←</button>
-  <button class="tile-handle" data-tile-dir="north" type="button" aria-label="Tile north">↑</button>
-  <button class="tile-handle" data-tile-dir="south" type="button" aria-label="Tile south">↓</button>
+  <button class="tile-handle" data-tile-dir="east"  type="button" aria-label="Tile east"><span class="tile-arrow">→</span></button>
+  <button class="tile-handle" data-tile-dir="west"  type="button" aria-label="Tile west"><span class="tile-arrow">→</span></button>
+  <button class="tile-handle" data-tile-dir="north" type="button" aria-label="Tile north"><span class="tile-arrow">→</span></button>
+  <button class="tile-handle" data-tile-dir="south" type="button" aria-label="Tile south"><span class="tile-arrow">→</span></button>
 </div>
 
 <!-- Radial long-press menu -->
@@ -1374,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v98</div>
+<div id="version">v99</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3731,6 +3738,10 @@ function updateTileHandles() {
     north: [cx, hy, cz - sz.z / 2 - padZ],
     south: [cx, hy, cz + sz.z / 2 + padZ]
   };
+  // Project the object's center to screen so we can rotate each arrow
+  // to point outward in screen coords (the WORLD direction would be
+  // misleading after the user rotates the camera).
+  const center = _projectToScreen(cx, hy, cz);
   let anyVisible = false;
   for (const [dir, [x, y, z]] of Object.entries(dirs)) {
     const p = _projectToScreen(x, y, z);
@@ -3739,6 +3750,11 @@ function updateTileHandles() {
     btn.style.display = 'flex';
     btn.style.left = p.x + 'px';
     btn.style.top  = p.y + 'px';
+    if (center) {
+      const ang = Math.atan2(p.y - center.y, p.x - center.x); // radians
+      const arrow = btn.firstElementChild;
+      if (arrow) arrow.style.transform = 'rotate(' + ang + 'rad)';
+    }
     anyVisible = true;
   }
   _tileHandlesEl.hidden = !anyVisible;
