@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v100</div>
+<div id="version">v101</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3631,6 +3631,15 @@ function restoreFrom(state) {
 
 function undo() {
   if (historyIdx <= 0) { toast('Nothing to undo'); return; }
+  // In-progress path sessions are not represented in the history
+  // snapshot (only the resulting placed items are). Continuing a path
+  // after undo accumulates duplicates because the restored items aren't
+  // tracked in pathSpawnedItems. Cleanest solution: exit path mode and
+  // de-arm the palette item, so undo always lands the user in plain
+  // navigate mode. They can re-tap the palette to start a fresh path.
+  if (typeof pathMode !== 'undefined' && pathMode) {
+    if (typeof clearPaletteSelection === 'function') clearPaletteSelection();
+  }
   historyIdx--;
   restoreFrom(history[historyIdx]);
   if (typeof scheduleAutosave === 'function') scheduleAutosave();
@@ -3640,6 +3649,9 @@ function undo() {
 
 function redo() {
   if (historyIdx >= history.length - 1) { toast('Nothing to redo'); return; }
+  if (typeof pathMode !== 'undefined' && pathMode) {
+    if (typeof clearPaletteSelection === 'function') clearPaletteSelection();
+  }
   historyIdx++;
   restoreFrom(history[historyIdx]);
   if (typeof scheduleAutosave === 'function') scheduleAutosave();
