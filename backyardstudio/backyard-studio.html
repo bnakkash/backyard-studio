@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v101</div>
+<div id="version">v102</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1516,6 +1516,81 @@ const stoneTex = _canvasTex(256, (g, S) => {
     g.stroke();
   }
 }, { repeat: 6 });
+const barkTex = _canvasTex(256, (g, S) => {
+  // Vertical bark grain — meant to be wrapped around cylinders so the
+  // grooves run along the trunk's height (CylinderGeometry's V axis).
+  const rand = _seededRand(31);
+  g.fillStyle = '#382a1a';
+  g.fillRect(0, 0, S, S);
+  // Fine vertical grain
+  for (let x = 0; x < S; x += 1) {
+    const t = (Math.sin(x * 0.06) + Math.sin(x * 0.21 + 1.7)) * 0.5;
+    const v = 50 + Math.floor(t * 26 + rand() * 28);
+    g.fillStyle = 'rgba(' + (v + 28) + ',' + (v + 16) + ',' + (v - 4) + ',0.55)';
+    g.fillRect(x, 0, 1, S);
+  }
+  // Deep grooves
+  for (let i = 0; i < 9; i++) {
+    const x = Math.floor(rand() * S);
+    g.fillStyle = 'rgba(15, 9, 5, 0.55)';
+    g.fillRect(x, 0, 1 + Math.floor(rand() * 2), S);
+  }
+  // Knots scattered along the trunk
+  for (let i = 0; i < 5; i++) {
+    const x = rand() * S, y = rand() * S, r = 5 + rand() * 10;
+    const grd = g.createRadialGradient(x, y, 1, x, y, r);
+    grd.addColorStop(0, 'rgba(15, 9, 5, 0.95)');
+    grd.addColorStop(1, 'rgba(15, 9, 5, 0)');
+    g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
+  }
+}, { repeat: 2 });
+// Foliage cross-billboard texture: a soft cluster of leaf silhouettes
+// with alpha. Used on intersecting planes to fake 3D foliage volume.
+// Drawn in mostly-white tones so the material's `color` provides the
+// per-species green tint.
+const leafTex = (() => {
+  const SIZE = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, SIZE, SIZE);
+  const rand = _seededRand(41);
+  const cx = SIZE / 2, cy = SIZE / 2;
+  // Generate ~70 small leaf-shaped ellipses radiating from cluster center.
+  for (let i = 0; i < 70; i++) {
+    // Cluster radius is biased toward center (squared distribution) so
+    // the silhouette is denser in the middle, sparser at the edge.
+    const t = rand();
+    const r = SIZE * 0.42 * t * t;
+    const a = rand() * Math.PI * 2;
+    const x = cx + Math.cos(a) * r;
+    const y = cy + Math.sin(a) * r;
+    const leafL = 11 + rand() * 16;
+    const leafW = leafL * (0.45 + rand() * 0.2);
+    const ang = rand() * Math.PI * 2;
+    // Slight per-leaf brightness variance — the material color tints overall.
+    const bright = 200 + Math.floor(rand() * 55);
+    g.save();
+    g.translate(x, y);
+    g.rotate(ang);
+    g.fillStyle = 'rgb(' + bright + ',' + (bright + 5) + ',' + (bright - 10) + ')';
+    g.beginPath();
+    g.ellipse(0, 0, leafW, leafL, 0, 0, Math.PI * 2);
+    g.fill();
+    // Subtle midrib vein
+    g.strokeStyle = 'rgba(120, 130, 110, 0.45)';
+    g.lineWidth = 1;
+    g.beginPath();
+    g.moveTo(0, -leafL * 0.95);
+    g.lineTo(0, leafL * 0.95);
+    g.stroke();
+    g.restore();
+  }
+  const tex = new T.CanvasTexture(c);
+  tex.encoding = T.sRGBEncoding;
+  tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+  return tex;
+})();
 
 // ============================================================
 // Lighting
@@ -1537,6 +1612,14 @@ scene.add(sun);
 
 const hemi = new T.HemisphereLight(0xbfd4e6, 0x6d7f55, 0.4);
 scene.add(hemi);
+
+// Cool fill light opposite the sun — softens the deep shadows on shaded
+// faces with a subtle blue-cool wash, the way real sky-bounce works in
+// the open. No shadows (would just add cost without benefit at this
+// intensity); positioned anti-parallel to the sun.
+const fillLight = new T.DirectionalLight(0x9fb6d4, 0.32);
+fillLight.position.set(-18, 30, -55);
+scene.add(fillLight);
 
 // Sky dome — vertical gradient sphere wrapping the scene. Replaces the
 // flat background visually; the underlying scene.background color stays
@@ -1966,7 +2049,14 @@ function buildHouseWindow(w, h, frameColor, glassColor) {
   const grp = new T.Group();
   const glass = new T.Mesh(
     new T.BoxGeometry(w, h, 0.1),
-    new T.MeshStandardMaterial({ color: glassColor, emissive: 0x1a2030, roughness: 0.45, metalness: 0.1 })
+    new T.MeshPhysicalMaterial({
+      color: glassColor, emissive: 0x1a2030,
+      roughness: 0.18, metalness: 0,
+      // Clearcoat is a thin perfect-mirror layer on top — gives glass
+      // its characteristic double-reflection sheen without the perf
+      // cost of true transmission/refraction.
+      clearcoat: 0.85, clearcoatRoughness: 0.05
+    })
   );
   grp.add(glass);
   const frame = new T.Mesh(
@@ -2042,9 +2132,28 @@ function _buildBranchTree(opts) {
   const minLength = opts.minLength != null ? opts.minLength : 0.6;
   const foliageSize = opts.foliageSize || 1.1;
   const foliageVar = opts.foliageVar != null ? opts.foliageVar : 0.5;
-  const foliageCount = opts.foliageCount || [2, 3];
   const childrenAtRoot = opts.childrenAtRoot || 3;
   const childrenAtBranch = opts.childrenAtBranch || 2;
+  // Decorate the wood material once with the bark texture so trunks and
+  // branches read as actual bark rather than flat brown. Idempotent —
+  // the caller's material is reused across multiple build() calls.
+  if (woodMat && woodMat.map !== barkTex) {
+    woodMat.map = barkTex;
+    woodMat.needsUpdate = true;
+  }
+  // Promote each foliage material to a cross-billboard alpha-cutout
+  // material: leaf-cluster texture, alphaTest for crisp shadow edges,
+  // DoubleSide so leaves are visible from both sides. Idempotent.
+  folMats.forEach(m => {
+    if (m.map !== leafTex) {
+      m.map = leafTex;
+      m.alphaTest = 0.5;
+      m.transparent = false; // alphaTest is enough; transparent breaks z-sort
+      m.side = T.DoubleSide;
+      m.flatShading = false;
+      m.needsUpdate = true;
+    }
+  });
 
   function addBranch(start, end, rStart, rEnd) {
     const delta = end.clone().sub(start);
@@ -2059,22 +2168,30 @@ function _buildBranchTree(opts) {
     cyl.castShadow = true;
     g.add(cyl);
   }
+  // Foliage cluster as cross-billboards: 2 perpendicular alpha-cutout
+  // planes so the clump reads as a 3D volume from any angle without the
+  // tell-tale icosphere silhouette. 1–2 clusters per terminal tip,
+  // each slightly offset for natural variation.
   function addFoliage(pos, size) {
     if (!folMats.length) return;
-    const count = foliageCount[0] + Math.floor(Math.random() * (foliageCount[1] - foliageCount[0] + 1));
-    for (let i = 0; i < count; i++) {
-      const r = size * (0.7 + Math.random() * 0.5);
-      const m = new T.Mesh(
-        new T.IcosahedronGeometry(r, 0),
-        folMats[Math.floor(Math.random() * folMats.length)]
-      );
-      m.position.copy(pos);
-      m.position.x += (Math.random() - 0.5) * size * 0.7;
-      m.position.y += (Math.random() - 0.5) * size * 0.5;
-      m.position.z += (Math.random() - 0.5) * size * 0.7;
-      m.scale.set(1.1, 0.85, 1.1);
-      m.castShadow = true; m.receiveShadow = true;
-      g.add(m);
+    const clusters = 1 + (Math.random() < 0.45 ? 1 : 0);
+    for (let c = 0; c < clusters; c++) {
+      const w = size * (1.7 + Math.random() * 0.7);
+      const h = size * (1.5 + Math.random() * 0.6);
+      const baseAng = Math.random() * Math.PI * 2;
+      const ox = (Math.random() - 0.5) * size * 0.5;
+      const oy = (Math.random() - 0.5) * size * 0.4;
+      const oz = (Math.random() - 0.5) * size * 0.5;
+      // 2 perpendicular planes intersecting at the cluster center.
+      for (let p = 0; p < 2; p++) {
+        const mat = folMats[Math.floor(Math.random() * folMats.length)];
+        const plane = new T.Mesh(new T.PlaneGeometry(w, h), mat);
+        plane.position.set(pos.x + ox, pos.y + oy, pos.z + oz);
+        plane.rotation.y = baseAng + p * Math.PI / 2;
+        plane.castShadow = true;
+        plane.receiveShadow = true;
+        g.add(plane);
+      }
     }
   }
   function grow(start, dir, length, radius, depth) {
@@ -2302,10 +2419,13 @@ const PLACEABLES = {
       deck.position.y = 0.11; deck.receiveShadow = true; g.add(deck);
       const pool = new T.Mesh(
         new T.BoxGeometry(11, 0.3, 7),
-        new T.MeshStandardMaterial({
+        new T.MeshPhysicalMaterial({
           color: 0x3f9ed0, transparent: true, opacity: 0.88,
-          roughness: 0.35, metalness: 0,
-          emissive: 0x0a3a52, emissiveIntensity: 0.18  // self-glow keeps water bright without env reflections
+          roughness: 0.08, metalness: 0,
+          // Clearcoat = the glass-like sheen on the water's surface;
+          // emissive keeps it visually bright at low sun without an env map.
+          clearcoat: 1.0, clearcoatRoughness: 0.04,
+          emissive: 0x0a3a52, emissiveIntensity: 0.12
         })
       );
       pool.position.y = 0.24; g.add(pool);
@@ -2330,10 +2450,11 @@ const PLACEABLES = {
       shell.position.y = 0.6; shell.castShadow = true; g.add(shell);
       const water = new T.Mesh(
         new T.CylinderGeometry(1.55, 1.55, 0.1, 16),
-        new T.MeshStandardMaterial({
+        new T.MeshPhysicalMaterial({
           color: 0x4fa8c8, transparent: true, opacity: 0.8,
-          roughness: 0.35, metalness: 0,
-          emissive: 0x10465c, emissiveIntensity: 0.2
+          roughness: 0.08, metalness: 0,
+          clearcoat: 1.0, clearcoatRoughness: 0.04,
+          emissive: 0x10465c, emissiveIntensity: 0.14
         })
       );
       water.position.y = 1.15; g.add(water);
@@ -2825,7 +2946,11 @@ const PLACEABLES = {
       const wallMat   = new T.MeshStandardMaterial({ color: 0xe8d8b8 });
       const roofMat   = new T.MeshStandardMaterial({ color: 0x6b4a3a });
       const trimMat   = new T.MeshStandardMaterial({ color: 0xf5ede0 });
-      const windowMat = new T.MeshStandardMaterial({ color: 0x506a82, emissive: 0x1a2030, roughness: 0.45, metalness: 0.1 });
+      const windowMat = new T.MeshPhysicalMaterial({
+        color: 0x506a82, emissive: 0x1a2030,
+        roughness: 0.18, metalness: 0,
+        clearcoat: 0.85, clearcoatRoughness: 0.05
+      });
       const doorMat   = new T.MeshStandardMaterial({ color: 0x4a3828 });
       const stoneMat  = new T.MeshStandardMaterial({ color: 0x8a8275, map: stoneTex, roughness: 0.9, metalness: 0 });
 
