@@ -654,6 +654,40 @@
     overflow-y: auto;
   }
   #help-overlay[hidden] { display: none; }
+  /* Floating tile handles — appear at the midpoints of a selected item's
+     bounding box. Each frame, JS projects the world midpoint to screen
+     coords and writes left/top here. */
+  #tile-handles {
+    position: fixed;
+    inset: 0;
+    pointer-events: none;
+    z-index: 30;
+  }
+  #tile-handles[hidden] { display: none; }
+  #tile-handles .tile-handle {
+    position: absolute;
+    width: 38px; height: 38px;
+    margin-left: -19px; margin-top: -19px;
+    border-radius: 50%;
+    background: rgba(28, 33, 24, 0.92);
+    border: 1px solid var(--accent);
+    color: var(--accent);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 17px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    pointer-events: auto;
+    backdrop-filter: blur(6px);
+    -webkit-backdrop-filter: blur(6px);
+    box-shadow: 0 3px 10px rgba(0,0,0,0.4);
+    transition: transform 0.12s, background 0.12s;
+  }
+  #tile-handles .tile-handle:hover {
+    background: rgba(212, 165, 116, 0.22);
+    transform: scale(1.1) translate(0, 0);
+  }
+  #tile-handles .tile-handle:active { transform: scale(0.92); }
   /* Radial long-press menu — appears centered on the press point */
   #radial-menu {
     position: fixed;
@@ -1212,6 +1246,16 @@
   <button class="sun-now" id="sun-close" type="button" aria-label="Hide sun bar" title="Hide">✕</button>
 </div>
 
+<!-- Floating tile handles — DOM buttons projected onto the midpoints of
+     the selected item's bounding box. Tap one to clone edge-to-edge in
+     that direction. Hidden when nothing is selected. -->
+<div id="tile-handles" hidden>
+  <button class="tile-handle" data-tile-dir="east"  type="button" aria-label="Tile east">→</button>
+  <button class="tile-handle" data-tile-dir="west"  type="button" aria-label="Tile west">←</button>
+  <button class="tile-handle" data-tile-dir="north" type="button" aria-label="Tile north">↑</button>
+  <button class="tile-handle" data-tile-dir="south" type="button" aria-label="Tile south">↓</button>
+</div>
+
 <!-- Radial long-press menu -->
 <div id="radial-menu" hidden>
   <div class="radial-bg"></div>
@@ -1327,7 +1371,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v95</div>
+<div id="version">v96</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3636,6 +3680,64 @@ function getItemSizeXZ(item) {
   return result;
 }
 
+// Floating tile handles: 4 DOM buttons projected onto the world-space
+// midpoints of the selected item's bounding box, so the user can tap any
+// side to clone in that direction without going through the side panel.
+const _tileHandlesEl = document.getElementById('tile-handles');
+const _tileHandleBtns = Array.from(_tileHandlesEl.querySelectorAll('.tile-handle'));
+const _tileHandleByDir = Object.fromEntries(_tileHandleBtns.map(b => [b.dataset.tileDir, b]));
+const _tileHandleProj = new T.Vector3();
+function _projectToScreen(x, y, z) {
+  _tileHandleProj.set(x, y, z).project(camera);
+  if (_tileHandleProj.z > 1) return null; // behind camera
+  return {
+    x: (_tileHandleProj.x + 1) * 0.5 * window.innerWidth,
+    y: (-_tileHandleProj.y + 1) * 0.5 * window.innerHeight
+  };
+}
+function updateTileHandles() {
+  // Hide when there's no selection, multi-selection, in walk/yard-edit/
+  // path mode, while a placement is armed, or during a drag.
+  const hide = !selection || selectionSet.size > 1 || walkMode || yardEditMode
+            || pathMode || !!selectedKind || !!dragItem || !radialEl.hidden;
+  if (hide) {
+    if (!_tileHandlesEl.hidden) _tileHandlesEl.hidden = true;
+    return;
+  }
+  const sz = getItemSizeXZ(selection);
+  const cx = selection.mesh.position.x;
+  const cz = selection.mesh.position.z;
+  // Hover the handle a touch above ground so a tall tree's bbox doesn't
+  // bury the icon. Use 1ft, clamped against item height.
+  const hy = 0.6;
+  const dirs = {
+    east:  [cx + sz.x / 2, hy, cz],
+    west:  [cx - sz.x / 2, hy, cz],
+    north: [cx, hy, cz - sz.z / 2],
+    south: [cx, hy, cz + sz.z / 2]
+  };
+  let anyVisible = false;
+  for (const [dir, [x, y, z]] of Object.entries(dirs)) {
+    const p = _projectToScreen(x, y, z);
+    const btn = _tileHandleByDir[dir];
+    if (!p) { btn.style.display = 'none'; continue; }
+    btn.style.display = 'flex';
+    btn.style.left = p.x + 'px';
+    btn.style.top  = p.y + 'px';
+    anyVisible = true;
+  }
+  _tileHandlesEl.hidden = !anyVisible;
+}
+_tileHandleBtns.forEach(btn => {
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    const dir = btn.dataset.tileDir;
+    const map = { east: [1, 0], west: [-1, 0], north: [0, -1], south: [0, 1] };
+    const [dx, dz] = map[dir] || [0, 0];
+    if (dx || dz) duplicateInDirection(dx, dz);
+  });
+});
+
 // Place a duplicate of the selected item edge-to-edge in `dir`, where dir
 // is a unit vector in world XZ. Useful for "extending" a row of pavers,
 // hedges, beds, etc. without manual fiddling.
@@ -3755,10 +3857,38 @@ async function shareLayout() {
 }
 
 // Helpers used by sliders, step buttons, presets, and gestures
+// Resistive 90° rotation snap: when the rotation is within ±5° of a
+// quarter turn, lock to that exact angle. Triggers a haptic tick on
+// crossing in/out so the user feels the detent.
+const ROT_SNAP_STEP = Math.PI / 2;        // 90°
+const ROT_SNAP_TOL  = 5 * Math.PI / 180;  // ±5°
+let _lastRotSnapStep = null;
+function snapRotationToQuarter(rad) {
+  // Normalize to [0, 2π) so step indexing is stable.
+  const TWO_PI = Math.PI * 2;
+  const nrad = ((rad % TWO_PI) + TWO_PI) % TWO_PI;
+  const nearest = Math.round(nrad / ROT_SNAP_STEP) * ROT_SNAP_STEP;
+  const delta = Math.abs(nrad - nearest);
+  const wrappedDelta = Math.min(delta, TWO_PI - delta);
+  const stepIdx = Math.round(nearest / ROT_SNAP_STEP) % 4;
+  if (wrappedDelta < ROT_SNAP_TOL) {
+    if (_lastRotSnapStep !== stepIdx) {
+      _lastRotSnapStep = stepIdx;
+      haptic && haptic(8);
+    }
+    // Preserve the original number of full rotations to avoid jumping.
+    const turns = Math.floor(rad / TWO_PI);
+    return turns * TWO_PI + nearest;
+  }
+  if (_lastRotSnapStep !== null) _lastRotSnapStep = null;
+  return rad;
+}
 function applyRotationToSelection(rad, opts) {
   if (!selection) return;
-  selection.mesh.rotation.y = rad;
-  const deg = Math.round(((rad * 180 / Math.PI) % 360 + 360) % 360);
+  // Skip the snap when commit:true (slider/preset commits absolute values).
+  const snapped = (opts && opts.skipSnap) ? rad : snapRotationToQuarter(rad);
+  selection.mesh.rotation.y = snapped;
+  const deg = Math.round(((snapped * 180 / Math.PI) % 360 + 360) % 360);
   document.getElementById('rot-slider').value = deg;
   document.getElementById('rot-value').textContent = deg + '°';
   if (opts && opts.commit) pushHistory();
@@ -3781,7 +3911,9 @@ function applyScaleToSelection(scale, opts) {
 }
 
 document.getElementById('rot-slider').addEventListener('input', e => {
-  applyRotationToSelection(parseInt(e.target.value) * Math.PI / 180);
+  // Slider passes precise degree values; bypass the gesture quarter-snap
+  // so the user can dial e.g. 87° without it leaping to 90°.
+  applyRotationToSelection(parseInt(e.target.value) * Math.PI / 180, { skipSnap: true });
 });
 document.getElementById('rot-slider').addEventListener('change', () => {
   if (selection) pushHistory();
@@ -5591,6 +5723,7 @@ function animate() {
     const t = performance.now() * 0.003;
     selection.outline.material.opacity = 0.7 + Math.sin(t) * 0.25;
   }
+  updateTileHandles();
   renderer.render(scene, camera);
 }
 animate();
