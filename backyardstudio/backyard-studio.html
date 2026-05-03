@@ -654,6 +654,162 @@
     overflow-y: auto;
   }
   #help-overlay[hidden] { display: none; }
+  /* Recent items quick-pick dock — bottom-center bar of last-armed
+     item types. Tap a chip to re-arm that item without re-opening the
+     drawer. Auto-hides when nothing recent. */
+  #recent-dock {
+    position: absolute;
+    left: 50%;
+    bottom: calc(74px + var(--safe-bot));
+    transform: translateX(-50%);
+    z-index: 11;
+    display: flex; gap: 6px;
+    padding: 5px 6px;
+    background: rgba(28, 33, 24, 0.78);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    max-width: calc(100vw - 24px);
+    overflow-x: auto;
+  }
+  #recent-dock[hidden] { display: none; }
+  #recent-dock .recent-chip {
+    width: 36px; height: 36px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 18px;
+    line-height: 1;
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer;
+    transition: background 0.12s, border-color 0.12s, transform 0.1s;
+    flex-shrink: 0;
+  }
+  #recent-dock .recent-chip:hover { border-color: var(--accent); background: rgba(212,165,116,0.18); }
+  #recent-dock .recent-chip.active { border-color: var(--accent); background: rgba(212,165,116,0.32); }
+  #recent-dock .recent-chip:active { transform: scale(0.92); }
+
+  /* Floating action toolbar on selected item — projected from world
+     position to screen coords each frame, like the tile handles. */
+  #select-actions {
+    position: fixed;
+    z-index: 31;
+    display: flex; gap: 4px;
+    padding: 4px;
+    background: rgba(28, 33, 24, 0.92);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    box-shadow: 0 3px 12px rgba(0,0,0,0.45);
+    transform: translate(-50%, -150%);
+    transition: opacity 0.15s;
+  }
+  #select-actions[hidden] { display: none; }
+  #select-actions .select-action {
+    width: 30px; height: 30px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.04);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-size: 14px;
+    line-height: 1;
+    padding: 0;
+    cursor: pointer;
+    display: flex; align-items: center; justify-content: center;
+    transition: background 0.12s, border-color 0.12s, transform 0.1s;
+  }
+  #select-actions .select-action:hover { border-color: var(--accent); background: rgba(212,165,116,0.22); }
+  #select-actions .select-action:active { transform: scale(0.92); }
+  #select-actions .select-action-danger { color: #e8b8b8; border-color: rgba(190, 90, 90, 0.55); }
+  #select-actions .select-action-danger:hover { background: rgba(180, 70, 70, 0.22); border-color: rgba(220, 110, 110, 0.85); }
+
+  /* Save/item status pill — top-center. Shows save state + item count. */
+  #status-pill {
+    position: absolute;
+    top: calc(16px + var(--safe-top));
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 9;
+    padding: 6px 12px;
+    border-radius: 100px;
+    background: rgba(28, 33, 24, 0.78);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.05em;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    pointer-events: none;
+    transition: color 0.15s;
+  }
+  #status-pill.saving { color: var(--accent); }
+  /* Hide status pill when sun bar is showing (they share the same
+     vertical real estate at the top). Sun bar wins. */
+  body:has(#sun-bar:not([hidden])) #status-pill { display: none; }
+
+  /* First-time onboarding modal — three-step intro tour. */
+  #onboarding {
+    position: absolute;
+    inset: 0;
+    z-index: 60;
+    background: rgba(5, 8, 4, 0.55);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 24px;
+  }
+  #onboarding[hidden] { display: none; }
+  #onboarding .onboarding-card {
+    background: var(--panel);
+    border: 1px solid var(--border-hi);
+    border-radius: 12px;
+    padding: 18px 22px;
+    max-width: 360px;
+    box-shadow: 0 12px 40px rgba(0,0,0,0.55);
+  }
+  #onboarding .onboarding-num {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    letter-spacing: 0.2em;
+    color: var(--accent);
+    margin-bottom: 6px;
+  }
+  #onboarding .onboarding-title {
+    font-family: 'Fraunces', serif;
+    font-size: 22px;
+    font-weight: 500;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  #onboarding .onboarding-body {
+    color: var(--text-dim);
+    line-height: 1.55;
+    margin-bottom: 18px;
+    font-size: 14px;
+  }
+  #onboarding .onboarding-actions {
+    display: flex; justify-content: space-between; align-items: center;
+  }
+  #onboarding button {
+    padding: 8px 16px;
+    border-radius: 6px;
+    font-family: inherit;
+    font-size: 13px;
+    cursor: pointer;
+    border: 1px solid var(--border);
+    background: rgba(255,255,255,0.03);
+    color: var(--text);
+    transition: background 0.12s, border-color 0.12s;
+  }
+  #onboarding button.onboarding-skip { background: transparent; color: var(--text-dim); border-color: transparent; }
+  #onboarding button.onboarding-skip:hover { color: var(--text); }
+  #onboarding button.onboarding-next { background: var(--accent); border-color: var(--accent); color: #1c2118; font-weight: 500; }
+  #onboarding button.onboarding-next:hover { filter: brightness(1.1); }
+
   /* Floating tile handles — appear at the midpoints of a selected item's
      bounding box. Each frame, JS projects the world midpoint to screen
      coords and writes left/top here. */
@@ -1364,6 +1520,7 @@
   <button class="cam-btn" data-view="top">Top-down</button>
   <button class="cam-btn" data-view="front">Yard view</button>
   <button class="cam-btn" id="reset-cam">Reset</button>
+  <button class="cam-btn" id="fit-yard-btn" title="Frame entire yard">Fit Yard</button>
   <span class="cam-divider"></span>
   <button class="cam-btn icon-btn" id="rot-left" aria-label="Rotate camera 90° left" title="Rotate 90° left">↺</button>
   <button class="cam-btn icon-btn" id="rot-right" aria-label="Rotate camera 90° right" title="Rotate 90° right">↻</button>
@@ -1381,7 +1538,50 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v110</div>
+<div id="version">v111</div>
+
+<!-- Recent-items dock: bottom-center bar with up to 5 chips of the
+     most recently armed/placed item kinds for one-tap re-arming. -->
+<div id="recent-dock" hidden></div>
+
+<!-- Floating action toolbar that hovers near the selected item in
+     screen-projected coords (similar to tile handles). Quick access to
+     Focus / Duplicate / Delete without scrolling the side panel. -->
+<div id="select-actions" hidden>
+  <button class="select-action" data-act="focus" type="button" aria-label="Focus on selection" title="Focus camera">◎</button>
+  <button class="select-action" data-act="duplicate" type="button" aria-label="Duplicate selection" title="Duplicate">⎘</button>
+  <button class="select-action select-action-danger" data-act="delete" type="button" aria-label="Delete selection" title="Delete">×</button>
+</div>
+
+<!-- Save/item status pill, top-center. Replaces the small autosave text
+     buried in the right-panel layout section with something visible. -->
+<div id="status-pill" aria-live="polite">✓ Saved · 0 items</div>
+
+<!-- First-time onboarding tour. 3 hints, dismissable, persists in
+     localStorage so it only shows once per user. -->
+<div id="onboarding" hidden>
+  <div class="onboarding-card">
+    <div class="onboarding-step" data-step="1">
+      <div class="onboarding-num">1 / 3</div>
+      <div class="onboarding-title">Pick &amp; place</div>
+      <div class="onboarding-body">Tap an item in the left palette to arm it, then tap the yard to drop it.</div>
+    </div>
+    <div class="onboarding-step" data-step="2" hidden>
+      <div class="onboarding-num">2 / 3</div>
+      <div class="onboarding-title">Move &amp; tile</div>
+      <div class="onboarding-body">Tap a placed item to select. Drag from anywhere to move it. Use the floating arrows to clone edge-to-edge.</div>
+    </div>
+    <div class="onboarding-step" data-step="3" hidden>
+      <div class="onboarding-num">3 / 3</div>
+      <div class="onboarding-title">Long-press for menu</div>
+      <div class="onboarding-body">Press and hold any spot for a radial menu — Place, Walk to here, or Focus the camera there.</div>
+    </div>
+    <div class="onboarding-actions">
+      <button class="onboarding-skip" type="button">Skip</button>
+      <button class="onboarding-next" type="button">Got it</button>
+    </div>
+  </div>
+</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -5877,6 +6077,192 @@ document.getElementById('reset-cam').addEventListener('click', () => {
 });
 
 // ============================================================
+// UX feature: Fit Yard — auto-zoom camera to frame the yard polygon.
+// Computes the polygon's XZ bbox, picks a camera radius that fits the
+// larger axis comfortably in the perspective FOV, and re-centers.
+// ============================================================
+document.getElementById('fit-yard-btn').addEventListener('click', () => {
+  let minX = Infinity, maxX = -Infinity, minZ = Infinity, maxZ = -Infinity;
+  YARD_UV.forEach(([u, v]) => {
+    const [x, z] = uvToWorld(u, v);
+    if (x < minX) minX = x; if (x > maxX) maxX = x;
+    if (z < minZ) minZ = z; if (z > maxZ) maxZ = z;
+  });
+  const cx = (minX + maxX) / 2;
+  const cz = (minZ + maxZ) / 2;
+  const sizeX = maxX - minX, sizeZ = maxZ - minZ;
+  const maxSize = Math.max(sizeX, sizeZ);
+  // For a 55° vertical FOV (orbit mode), radius ≈ size / (2 * tan(fov/2))
+  // then padded so there's whitespace around the yard.
+  const fovRad = camera.fov * Math.PI / 180;
+  const radius = (maxSize * 0.6) / Math.tan(fovRad / 2) * 0.85;
+  target.set(cx, 0, cz);
+  cam.radius = Math.max(40, Math.min(220, radius));
+  cam.phi = Math.PI * 0.18;
+  // Pick a theta that puts the camera south of the yard looking north
+  cam.theta = Math.PI * 0.5;
+  updateCam();
+  toast('Framed yard');
+});
+
+// ============================================================
+// UX feature: Recent items quick-pick dock.
+// Tracks the last N item kinds the user armed/placed; renders chips
+// at the bottom-center for one-tap re-arming.
+// ============================================================
+const RECENT_MAX = 5;
+const RECENT_KEY = 'backyard_recent_items';
+let recentItems = [];
+try {
+  const raw = localStorage.getItem(RECENT_KEY);
+  if (raw) recentItems = JSON.parse(raw).filter(k => PLACEABLES[k]);
+} catch (_) {}
+const recentDock = document.getElementById('recent-dock');
+function _renderRecentDock() {
+  recentDock.innerHTML = '';
+  if (recentItems.length === 0) { recentDock.hidden = true; return; }
+  recentDock.hidden = false;
+  recentItems.forEach(kind => {
+    const def = PLACEABLES[kind];
+    if (!def) return;
+    const chip = document.createElement('button');
+    chip.className = 'recent-chip';
+    chip.type = 'button';
+    chip.title = def.name;
+    chip.textContent = def.icon;
+    if (kind === selectedKind) chip.classList.add('active');
+    chip.addEventListener('click', () => {
+      // Re-arm by simulating a palette click via the existing element.
+      const paletteItem = Array.from(document.querySelectorAll('#palette .item')).find(el => {
+        return el.querySelector('.item-text > div').textContent === def.name;
+      });
+      if (paletteItem) paletteItem.click();
+    });
+    recentDock.appendChild(chip);
+  });
+}
+function pushRecentItem(kind) {
+  if (!PLACEABLES[kind]) return;
+  recentItems = [kind].concat(recentItems.filter(k => k !== kind)).slice(0, RECENT_MAX);
+  try { localStorage.setItem(RECENT_KEY, JSON.stringify(recentItems)); } catch (_) {}
+  _renderRecentDock();
+}
+// Hook: every time an item is actually placed, push to recent.
+const _origPlaceItem = placeItem;
+placeItem = function(kind, x, z) {
+  pushRecentItem(kind);
+  return _origPlaceItem(kind, x, z);
+};
+_renderRecentDock();
+
+// ============================================================
+// UX feature: Floating action toolbar that hovers near the selected
+// item (focus / duplicate / delete). Updates each frame in animate().
+// ============================================================
+const selectActionsEl = document.getElementById('select-actions');
+const _selProj = new T.Vector3();
+function updateSelectActions() {
+  const hide = !selection || selectionSet.size > 1 || walkMode || yardEditMode
+            || pathMode || !!selectedKind || !!dragItem || !radialEl.hidden;
+  if (hide) { if (!selectActionsEl.hidden) selectActionsEl.hidden = true; return; }
+  const sz = (typeof getItemSizeXZ === 'function') ? getItemSizeXZ(selection) : { x: 1, z: 1 };
+  // Project a point ABOVE the selection (so the toolbar floats above it).
+  // Use the selection's Y bbox top + a small offset.
+  const box = new T.Box3();
+  selection.mesh.traverse(o => {
+    if (o.userData && o.userData.isContactShadow) return;
+    if (o.isMesh && o.geometry) {
+      if (!o.geometry.boundingBox) o.geometry.computeBoundingBox();
+      const tmp = o.geometry.boundingBox.clone().applyMatrix4(o.matrixWorld);
+      box.union(tmp);
+    }
+  });
+  const topY = box.isEmpty() ? 1 : box.max.y;
+  _selProj.set(selection.mesh.position.x, topY + 0.4, selection.mesh.position.z);
+  _selProj.project(camera);
+  if (_selProj.z > 1) { selectActionsEl.hidden = true; return; }
+  const sx = (_selProj.x + 1) * 0.5 * window.innerWidth;
+  const sy = (-_selProj.y + 1) * 0.5 * window.innerHeight;
+  selectActionsEl.style.left = sx + 'px';
+  selectActionsEl.style.top  = sy + 'px';
+  selectActionsEl.hidden = false;
+}
+selectActionsEl.querySelectorAll('.select-action').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const act = btn.dataset.act;
+    if (act === 'focus' && selection) {
+      target.set(selection.mesh.position.x, 0, selection.mesh.position.z);
+      cam.radius = Math.min(cam.radius, 28);
+      updateCam();
+    } else if (act === 'duplicate') {
+      duplicateSelected();
+    } else if (act === 'delete') {
+      deleteSelected();
+    }
+  });
+});
+
+// ============================================================
+// UX feature: Save/item status pill.
+// Listens to autosave state + placed.length changes and updates a
+// visible top-center pill.
+// ============================================================
+const statusPillEl = document.getElementById('status-pill');
+let _lastStatusUpdate = 0;
+function updateStatusPill(state) {
+  const n = placed.length;
+  const itemsLabel = n + ' item' + (n === 1 ? '' : 's');
+  if (state === 'saving') {
+    statusPillEl.classList.add('saving');
+    statusPillEl.textContent = '⋯ Saving · ' + itemsLabel;
+  } else {
+    statusPillEl.classList.remove('saving');
+    statusPillEl.textContent = '✓ Saved · ' + itemsLabel;
+  }
+}
+// Wrap the existing save status setters so the pill mirrors them.
+if (typeof setSaveStatusSaving === 'function') {
+  const _origSaving = setSaveStatusSaving;
+  setSaveStatusSaving = function() { updateStatusPill('saving'); return _origSaving.apply(this, arguments); };
+}
+if (typeof setSaveStatusSaved === 'function') {
+  const _origSaved = setSaveStatusSaved;
+  setSaveStatusSaved = function() { updateStatusPill('saved'); return _origSaved.apply(this, arguments); };
+}
+updateStatusPill('saved');
+
+// ============================================================
+// UX feature: First-time onboarding tour. Three short hints, dismissable.
+// localStorage flag so it only shows once.
+// ============================================================
+const ONBOARDING_KEY = 'backyard_onboarded_v1';
+const onboardingEl = document.getElementById('onboarding');
+let _onboardingStep = 1;
+function showOnboardingStep(n) {
+  _onboardingStep = n;
+  onboardingEl.querySelectorAll('.onboarding-step').forEach(s => {
+    s.hidden = parseInt(s.dataset.step) !== n;
+  });
+  const nextBtn = onboardingEl.querySelector('.onboarding-next');
+  nextBtn.textContent = n === 3 ? 'Done' : 'Next';
+}
+function dismissOnboarding() {
+  onboardingEl.hidden = true;
+  try { localStorage.setItem(ONBOARDING_KEY, '1'); } catch (_) {}
+}
+onboardingEl.querySelector('.onboarding-skip').addEventListener('click', dismissOnboarding);
+onboardingEl.querySelector('.onboarding-next').addEventListener('click', () => {
+  if (_onboardingStep >= 3) { dismissOnboarding(); return; }
+  showOnboardingStep(_onboardingStep + 1);
+});
+try {
+  if (!localStorage.getItem(ONBOARDING_KEY)) {
+    onboardingEl.hidden = false;
+    showOnboardingStep(1);
+  }
+} catch (_) {}
+
+// ============================================================
 // Resize
 // ============================================================
 window.addEventListener('resize', () => {
@@ -6394,6 +6780,7 @@ function animate() {
     selection.outline.material.opacity = 0.7 + Math.sin(t) * 0.25;
   }
   updateTileHandles();
+  updateSelectActions();
   renderer.render(scene, camera);
 }
 animate();
