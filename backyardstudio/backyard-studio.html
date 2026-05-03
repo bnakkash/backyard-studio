@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v105</div>
+<div id="version">v106</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2395,23 +2395,40 @@ function _buildShrubCluster(opts) {
     const numStems = Math.max(1, opts.numStems || 1);
     const stemSpread = opts.stemSpread || 0.18;
     for (let s = 0; s < numStems; s++) {
-      const ang = (s / numStems) * Math.PI * 2 + Math.random() * 0.4;
-      const dist = numStems > 1 ? stemSpread * (0.5 + Math.random() * 0.5) : 0;
+      let sx, sz, tiltX = 0, tiltZ = 0;
+      if (opts.shape === 'box' && numStems > 1) {
+        // Hedge: stems are spaced along the long X axis.
+        sx = -stemSpread / 2 + (s + Math.random() * 0.6) * (stemSpread / numStems);
+        sz = (Math.random() - 0.5) * (opts.depth || 0.4) * 0.6;
+        tiltZ = (Math.random() - 0.5) * 0.05;
+      } else {
+        // Default radial clump (multi-stem shrub)
+        const ang = (s / numStems) * Math.PI * 2 + Math.random() * 0.4;
+        const dist = numStems > 1 ? stemSpread * (0.5 + Math.random() * 0.5) : 0;
+        sx = Math.cos(ang) * dist;
+        sz = Math.sin(ang) * dist;
+        if (numStems > 1) {
+          tiltZ = -Math.cos(ang) * 0.12;
+          tiltX = Math.sin(ang) * 0.12;
+        }
+      }
       const stem = new T.Mesh(
         new T.CylinderGeometry(r * 0.78, r, opts.trunkHeight, 6),
         woodMat
       );
-      stem.position.set(Math.cos(ang) * dist, opts.trunkHeight / 2, Math.sin(ang) * dist);
-      // Slight outward tilt for the stem-clump feel
-      if (numStems > 1) {
-        stem.rotation.z = -Math.cos(ang) * 0.12;
-        stem.rotation.x = Math.sin(ang) * 0.12;
-      }
+      stem.position.set(sx, opts.trunkHeight / 2, sz);
+      stem.rotation.x = tiltX;
+      stem.rotation.z = tiltZ;
       stem.castShadow = true;
       g.add(stem);
     }
   }
-  // Distribute cross-billboard foliage planes throughout an ellipsoid.
+  // Distribute cross-billboard foliage planes throughout the cluster
+  // volume. Default 'ellipsoid' shape gives a rounded mound silhouette;
+  // 'box' shape uniformly fills a rectangular volume — used for hedges
+  // (viburnum) where the silhouette should read as a wall of foliage
+  // rather than a sphere.
+  const shape = opts.shape || 'ellipsoid';
   const w = opts.width || 1.2;
   const d = opts.depth || w;
   const h = opts.height || 1.5;
@@ -2420,16 +2437,23 @@ function _buildShrubCluster(opts) {
   const planeSize = opts.planeSize || 0.7;
   const flowerChance = opts.flowerChance || 0;
   for (let i = 0; i < density; i++) {
-    // Rejection-sample inside unit sphere, then warp to ellipsoid.
-    let ux, uy, uz;
-    do {
-      ux = Math.random() * 2 - 1;
-      uy = Math.random() * 2 - 1;
-      uz = Math.random() * 2 - 1;
-    } while (ux * ux + uy * uy + uz * uz > 1);
-    const px = ux * w;
-    const py = yBase + (uy * 0.5 + 0.5) * h;
-    const pz = uz * d;
+    let px, py, pz;
+    if (shape === 'box') {
+      px = (Math.random() * 2 - 1) * w;
+      py = yBase + Math.random() * h;
+      pz = (Math.random() * 2 - 1) * d;
+    } else {
+      // Rejection-sample inside unit sphere, then warp to ellipsoid.
+      let ux, uy, uz;
+      do {
+        ux = Math.random() * 2 - 1;
+        uy = Math.random() * 2 - 1;
+        uz = Math.random() * 2 - 1;
+      } while (ux * ux + uy * uy + uz * uz > 1);
+      px = ux * w;
+      py = yBase + (uy * 0.5 + 0.5) * h;
+      pz = uz * d;
+    }
     const baseAng = Math.random() * Math.PI * 2;
     const sw = planeSize * (0.85 + Math.random() * 0.4);
     const sh = planeSize * (0.75 + Math.random() * 0.4);
@@ -3235,21 +3259,20 @@ const PLACEABLES = {
     }
   },
   viburnum: {
-    name: 'Viburnum', category: 'Plants', icon: '🌱',
-    footprint: 'Dense upright hedge · 5–6 ft',
+    name: 'Viburnum Hedge', category: 'Plants', icon: '🌱',
+    footprint: 'Privacy hedge segment · ~5 ft long',
     build: () => {
-      // White "snowball" umbels are a defining feature of viburnum —
-      // make them bigger and bumpier so they read as proper flower
-      // heads rather than tiny dots. Built from a few overlapping
-      // sub-spheres for a snowball texture, scattered through the foliage.
+      // Hedge segment — long rectangular wall of dense foliage with
+      // visible woody stems anchoring it. Tile multiple side-by-side
+      // (use the → tile handle) to build a continuous hedge along a
+      // property line. Box shape, not ellipsoid: reads as a wall.
       function makeUmbel() {
         const u = new T.Group();
         const umbelMat = new T.MeshStandardMaterial({ color: 0xf2eedb, flatShading: true });
-        const baseR = 0.22 + Math.random() * 0.08;
+        const baseR = 0.18 + Math.random() * 0.06;
         const main = new T.Mesh(new T.IcosahedronGeometry(baseR, 1), umbelMat);
         main.castShadow = true;
         u.add(main);
-        // 4-6 little bumps around it for the cluster-of-tiny-flowers look
         const bumps = 4 + Math.floor(Math.random() * 3);
         for (let i = 0; i < bumps; i++) {
           const a = (i / bumps) * Math.PI * 2 + Math.random() * 0.5;
@@ -3262,37 +3285,37 @@ const PLACEABLES = {
           );
           u.add(bump);
         }
-        u.scale.y = 0.6; // squashed dome
+        u.scale.y = 0.6;
         return u;
       }
       return _buildShrubCluster({
+        shape: 'box',
+        width: 2.4, depth: 0.85, height: 3.6, yBase: 0.2,
+        density: 75, planeSize: 0.78,
+        // Several hidden support stems running along the hedge length
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
-        numStems: 4 + Math.floor(Math.random() * 2),
-        stemSpread: 0.35,
-        trunkHeight: 4.0, trunkRadius: 0.06,
+        numStems: 4, stemSpread: 1.6,
+        trunkHeight: 2.6, trunkRadius: 0.05,
         folMats: [
           new T.MeshStandardMaterial({ color: 0x2d4d2a }),
           new T.MeshStandardMaterial({ color: 0x416a3b })
         ],
-        width: 1.5, depth: 1.5, height: 4.6, yBase: 0.4,
-        density: 44, planeSize: 0.85,
-        flowerChance: 0.30,  // ~30% of foliage planes get an umbel nearby
+        flowerChance: 0.18,
         tipDecorate: (g, pos) => {
           const u = makeUmbel();
-          u.position.set(pos.x, pos.y + 0.15, pos.z);
+          u.position.set(pos.x, pos.y + 0.12, pos.z);
           g.add(u);
         }
       });
     }
   },
   bougainvillea: {
-    name: 'Bougainvillea', category: 'Plants', icon: '🌺',
-    footprint: 'Cascading magenta vine · 6–8 ft',
+    name: 'Bougainvillea Vine', category: 'Plants', icon: '🌺',
+    footprint: 'Climbing ivy panel · ~3 ft wide × 7 ft tall',
     build: () => {
-      // Vine, not tree: short woody trunk + several long arching canes
-      // that lift up away from the trunk, peak, then droop. Foliage and
-      // magenta papery bracts cascade along the entire cane length, not
-      // just at the tips.
+      // Climbing ivy panel — a vertical mass of vines climbing up,
+      // densely covered in magenta papery bracts. Place against a
+      // fence/wall, or tile with the → handle for a longer run.
       const g = new T.Group();
       const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 });
       if (woodMat.map !== barkTex) { woodMat.map = barkTex; woodMat.needsUpdate = true; }
@@ -3315,43 +3338,34 @@ const PLACEABLES = {
         side: T.DoubleSide, transparent: false
       });
 
-      // Stubby woody trunk
-      const trunkH = 1.6;
-      const trunk = new T.Mesh(new T.CylinderGeometry(0.18, 0.32, trunkH, 6), woodMat);
-      trunk.position.y = trunkH / 2;
-      trunk.castShadow = true;
-      g.add(trunk);
-      const trunkTop = new T.Vector3(0, trunkH, 0);
+      const PANEL_W = 2.6;        // width along X (parallel to wall)
+      const PANEL_D = 0.6;        // depth (sticking out from wall)
+      const PANEL_H = 7.0;        // height (climbing up)
+      const NUM_VINES = 5;
+      const SEGS = 14;
 
-      // Build N canes that arc out, up, and then drop. Each cane is a
-      // chain of cylinder segments along a parametric arc.
-      const numCanes = 4 + Math.floor(Math.random() * 3);
-      for (let b = 0; b < numCanes; b++) {
-        const azimuth = (b / numCanes) * Math.PI * 2 + Math.random() * 0.5;
-        const dx = Math.cos(azimuth), dz = Math.sin(azimuth);
-        const reach = 3.0 + Math.random() * 1.2;            // horizontal span
-        const apexLift = reach * 0.32;                       // peak height above trunk top
-        const segments = 7;
-        let prev = trunkTop.clone();
-        for (let s = 0; s < segments; s++) {
-          const t = (s + 1) / segments;
-          // Parabolic arc that rises to apexLift around t=0.5 then
-          // gently descends. Capped so the cane stays above ~30% of
-          // trunk height — no head-crab cane crashing to the ground.
-          const lift = -4 * apexLift * (t - 0.5) * (t - 0.5) + apexLift;
-          const droopAmt = (t > 0.5 ? (t - 0.5) * 0.7 : 0) * apexLift;
-          const yEnd = Math.max(trunkH * 0.35, trunkH + lift - droopAmt);
+      // 5 vertical-ish woody vines, each with a random horizontal
+      // wander as it climbs. Together they form the structural ladder
+      // that the leaves and bracts attach to.
+      for (let v = 0; v < NUM_VINES; v++) {
+        const xBase = -PANEL_W / 2 + (v + 0.5) * (PANEL_W / NUM_VINES) + (Math.random() - 0.5) * 0.3;
+        const zBase = (Math.random() - 0.5) * PANEL_D * 0.4;
+        const wanderPhase = Math.random() * Math.PI * 2;
+        const wanderAmp = 0.25 + Math.random() * 0.2;
+        let prev = new T.Vector3(xBase, 0, zBase);
+        for (let s = 0; s < SEGS; s++) {
+          const t = (s + 1) / SEGS;
+          const wander = Math.sin(t * 4.5 + wanderPhase) * wanderAmp;
           const next = new T.Vector3(
-            dx * reach * t,
-            yEnd,
-            dz * reach * t
+            xBase + wander,
+            t * PANEL_H,
+            zBase + Math.cos(t * 3.2 + wanderPhase) * 0.18
           );
-          // Tapered cylinder for this segment
           const delta = next.clone().sub(prev);
           const segLen = delta.length();
-          const radiusEnd = 0.07 * (1 - t * 0.6);
+          const radius = 0.07 * (1 - t * 0.5);
           const cyl = new T.Mesh(
-            new T.CylinderGeometry(radiusEnd * 0.8, radiusEnd, segLen, 5),
+            new T.CylinderGeometry(radius * 0.85, radius, segLen, 5),
             woodMat
           );
           cyl.position.copy(prev).add(next).multiplyScalar(0.5);
@@ -3359,50 +3373,32 @@ const PLACEABLES = {
           cyl.castShadow = true;
           g.add(cyl);
 
-          // Cross-billboard foliage along this segment
-          const folCount = 2 + (Math.random() < 0.5 ? 1 : 0);
-          for (let fc = 0; fc < folCount; fc++) {
+          // Foliage + bract decorations along the vine. Bracts
+          // dominate (real bougainvillea is mostly pink); leaves fill
+          // the gaps. Spread perpendicular to the vine so the panel
+          // has visual depth.
+          const decoCount = 5 + Math.floor(Math.random() * 4);
+          for (let dI = 0; dI < decoCount; dI++) {
             const lerpT = Math.random();
             const pos = prev.clone().lerp(next, lerpT);
-            pos.y -= 0.05 + Math.random() * 0.15;
+            const sa = Math.random() * Math.PI * 2;
+            const sr = 0.18 + Math.random() * 0.28;
+            pos.x += Math.cos(sa) * sr;
+            pos.y += (Math.random() - 0.5) * 0.18;
+            pos.z += Math.sin(sa) * sr * 0.6; // shallower in Z to keep panel-like
+            const isBract = Math.random() < 0.7;
+            const mat = isBract
+              ? (Math.random() < 0.5 ? bractMatA : bractMatB)
+              : folMats[Math.floor(Math.random() * folMats.length)];
+            const sz = isBract ? (0.36 + Math.random() * 0.22) : (0.32 + Math.random() * 0.16);
             const baseAng = Math.random() * Math.PI * 2;
-            const sw = 0.42 + Math.random() * 0.2, sh = 0.42 + Math.random() * 0.18;
             for (let p = 0; p < 2; p++) {
-              const mat = folMats[Math.floor(Math.random() * folMats.length)];
-              const plane = new T.Mesh(new T.PlaneGeometry(sw, sh), mat);
+              const plane = new T.Mesh(new T.PlaneGeometry(sz, sz), mat);
               plane.position.copy(pos);
               plane.rotation.y = baseAng + p * Math.PI / 2;
-              plane.castShadow = true; plane.receiveShadow = true;
+              plane.castShadow = true;
+              plane.receiveShadow = true;
               g.add(plane);
-            }
-          }
-
-          // Bract cluster: dense pink cross-billboards using the
-          // 3-papery-bract texture. Real bougainvillea reads as a wall
-          // of pink, so we lay them thick along the cane.
-          if (s >= 0) {
-            const bractClusters = 4 + Math.floor(Math.random() * 4);
-            for (let bk = 0; bk < bractClusters; bk++) {
-              const lerpT = Math.random();
-              const pos = prev.clone().lerp(next, lerpT);
-              // Spread perpendicular to the cane, slightly drooping
-              const a2 = Math.random() * Math.PI * 2;
-              const off = 0.15 + Math.random() * 0.18;
-              pos.x += Math.cos(a2) * off;
-              pos.y -= 0.04 + Math.random() * 0.16;
-              pos.z += Math.sin(a2) * off;
-              const sz = 0.42 + Math.random() * 0.22;
-              const baseAng = Math.random() * Math.PI * 2;
-              const mat = Math.random() < 0.5 ? bractMatA : bractMatB;
-              // Cross-billboard pair so cluster reads from any angle.
-              for (let p = 0; p < 2; p++) {
-                const plane = new T.Mesh(new T.PlaneGeometry(sz, sz), mat);
-                plane.position.copy(pos);
-                plane.rotation.y = baseAng + p * Math.PI / 2;
-                plane.castShadow = true;
-                plane.receiveShadow = true;
-                g.add(plane);
-              }
             }
           }
           prev = next;
