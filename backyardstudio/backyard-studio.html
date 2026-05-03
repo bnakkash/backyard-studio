@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v102</div>
+<div id="version">v103</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1520,27 +1520,28 @@ const barkTex = _canvasTex(256, (g, S) => {
   // Vertical bark grain — meant to be wrapped around cylinders so the
   // grooves run along the trunk's height (CylinderGeometry's V axis).
   const rand = _seededRand(31);
-  g.fillStyle = '#382a1a';
+  // Lighter base brown so trunks don't disappear into shadow.
+  g.fillStyle = '#705840';
   g.fillRect(0, 0, S, S);
   // Fine vertical grain
   for (let x = 0; x < S; x += 1) {
     const t = (Math.sin(x * 0.06) + Math.sin(x * 0.21 + 1.7)) * 0.5;
-    const v = 50 + Math.floor(t * 26 + rand() * 28);
+    const v = 95 + Math.floor(t * 26 + rand() * 32);
     g.fillStyle = 'rgba(' + (v + 28) + ',' + (v + 16) + ',' + (v - 4) + ',0.55)';
     g.fillRect(x, 0, 1, S);
   }
   // Deep grooves
   for (let i = 0; i < 9; i++) {
     const x = Math.floor(rand() * S);
-    g.fillStyle = 'rgba(15, 9, 5, 0.55)';
+    g.fillStyle = 'rgba(45, 32, 20, 0.55)';
     g.fillRect(x, 0, 1 + Math.floor(rand() * 2), S);
   }
   // Knots scattered along the trunk
   for (let i = 0; i < 5; i++) {
     const x = rand() * S, y = rand() * S, r = 5 + rand() * 10;
     const grd = g.createRadialGradient(x, y, 1, x, y, r);
-    grd.addColorStop(0, 'rgba(15, 9, 5, 0.95)');
-    grd.addColorStop(1, 'rgba(15, 9, 5, 0)');
+    grd.addColorStop(0, 'rgba(45, 30, 18, 0.9)');
+    grd.addColorStop(1, 'rgba(45, 30, 18, 0)');
     g.fillStyle = grd; g.beginPath(); g.arc(x, y, r, 0, Math.PI * 2); g.fill();
   }
 }, { repeat: 2 });
@@ -2238,6 +2239,84 @@ function _buildBranchTree(opts) {
 }
 
 // ============================================================
+// Dense-foliage cluster — for plants whose silhouette is a rounded
+// volume of leaves (shrubs, ground covers, hedges) rather than a
+// branching tree. Distributes cross-billboard alpha planes throughout
+// an ellipsoidal volume with optional short woody base.
+// ============================================================
+function _buildShrubCluster(opts) {
+  const g = new T.Group();
+  const folMats = opts.folMats || [];
+  const tipDecorate = opts.tipDecorate;
+  // Augment foliage materials for cross-billboard alpha rendering.
+  folMats.forEach(m => {
+    if (m.map !== leafTex) {
+      m.map = leafTex;
+      m.alphaTest = 0.5;
+      m.transparent = false;
+      m.side = T.DoubleSide;
+      m.flatShading = false;
+      m.needsUpdate = true;
+    }
+  });
+  // Optional short woody trunk/stems (visible at the base of an upright
+  // shrub like viburnum; omitted for low ground covers).
+  if (opts.trunkHeight && opts.trunkHeight > 0) {
+    const woodMat = opts.woodMat || new T.MeshStandardMaterial({ color: 0x4a3828, roughness: 0.95 });
+    if (woodMat.map !== barkTex) {
+      woodMat.map = barkTex;
+      woodMat.needsUpdate = true;
+    }
+    const r = opts.trunkRadius || 0.12;
+    const trunk = new T.Mesh(
+      new T.CylinderGeometry(r * 0.85, r, opts.trunkHeight, 6),
+      woodMat
+    );
+    trunk.position.y = opts.trunkHeight / 2;
+    trunk.castShadow = true;
+    g.add(trunk);
+  }
+  // Distribute cross-billboard foliage planes throughout an ellipsoid.
+  const w = opts.width || 1.2;
+  const d = opts.depth || w;
+  const h = opts.height || 1.5;
+  const yBase = opts.yBase != null ? opts.yBase : 0;
+  const density = opts.density || 22;
+  const planeSize = opts.planeSize || 0.7;
+  const flowerChance = opts.flowerChance || 0;
+  for (let i = 0; i < density; i++) {
+    // Rejection-sample inside unit sphere, then warp to ellipsoid.
+    let ux, uy, uz;
+    do {
+      ux = Math.random() * 2 - 1;
+      uy = Math.random() * 2 - 1;
+      uz = Math.random() * 2 - 1;
+    } while (ux * ux + uy * uy + uz * uz > 1);
+    const px = ux * w;
+    const py = yBase + (uy * 0.5 + 0.5) * h;
+    const pz = uz * d;
+    const baseAng = Math.random() * Math.PI * 2;
+    const sw = planeSize * (0.85 + Math.random() * 0.4);
+    const sh = planeSize * (0.75 + Math.random() * 0.4);
+    // Cross-billboard pair.
+    for (let p = 0; p < 2; p++) {
+      const mat = folMats[Math.floor(Math.random() * folMats.length)];
+      const plane = new T.Mesh(new T.PlaneGeometry(sw, sh), mat);
+      plane.position.set(px, py, pz);
+      plane.rotation.y = baseAng + p * Math.PI / 2;
+      plane.castShadow = true;
+      plane.receiveShadow = true;
+      g.add(plane);
+    }
+    // Optional flower fleck on a fraction of the planes.
+    if (tipDecorate && Math.random() < flowerChance) {
+      tipDecorate(g, { x: px, y: py, z: pz }, planeSize);
+    }
+  }
+  return g;
+}
+
+// ============================================================
 // Placeable definitions
 // ============================================================
 const PLACEABLES = {
@@ -2291,21 +2370,21 @@ const PLACEABLES = {
     footprint: 'Boxwood / Azalea, ~3 ft mounded',
     build: () => {
       const flowerMat = new T.MeshStandardMaterial({ color: 0xe8a3b8 });
-      return _buildBranchTree({
-        woodMat: new T.MeshStandardMaterial({ color: 0x5a4828, roughness: 0.95 }),
+      // No visible woody trunk — boxwood/azalea reads as a rounded
+      // mound of foliage covering the stems, so use a wider-than-tall
+      // ellipsoid filled with cross-billboard leaf clusters.
+      return _buildShrubCluster({
         folMats: [
-          new T.MeshStandardMaterial({ color: 0x456e34, flatShading: true }),
-          new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true })
+          new T.MeshStandardMaterial({ color: 0x456e34 }),
+          new T.MeshStandardMaterial({ color: 0x5a8a48 })
         ],
-        trunkHeight: 0,
-        numMain: [5, 7], mainTilt: [0.4, 0.9], mainLength: [0.8, 1.2], mainRadius: 0.06,
-        maxDepth: 2, minLength: 0.3, foliageSize: 0.4, foliageVar: 0.2,
+        width: 1.3, depth: 1.3, height: 1.7,
+        density: 26, planeSize: 0.7,
+        flowerChance: 0.22,
         tipDecorate: (g, pos) => {
-          if (Math.random() < 0.45) {
-            const f = new T.Mesh(new T.SphereGeometry(0.07, 5, 4), flowerMat);
-            f.position.copy(pos); f.position.y += 0.1;
-            g.add(f);
-          }
+          const f = new T.Mesh(new T.SphereGeometry(0.07, 5, 4), flowerMat);
+          f.position.set(pos.x, pos.y + 0.05, pos.z);
+          g.add(f);
         }
       });
     }
@@ -2723,21 +2802,20 @@ const PLACEABLES = {
     footprint: 'Low silvery sprawling shrub',
     build: () => {
       const flowerMat = new T.MeshStandardMaterial({ color: 0xb89bd6 });
-      return _buildBranchTree({
-        woodMat: new T.MeshStandardMaterial({ color: 0x6a5a45, roughness: 0.95 }),
+      // Wide, flat, silvery sprawl — much wider than tall; foliage
+      // hugs the ground.
+      return _buildShrubCluster({
         folMats: [
-          new T.MeshStandardMaterial({ color: 0x95a87f, flatShading: true }),
-          new T.MeshStandardMaterial({ color: 0xb0bf95, flatShading: true })
+          new T.MeshStandardMaterial({ color: 0x95a87f }),
+          new T.MeshStandardMaterial({ color: 0xb0bf95 })
         ],
-        trunkHeight: 0,
-        numMain: [6, 9], mainTilt: [0.7, 1.15], mainLength: [0.6, 1.0], mainRadius: 0.04,
-        maxDepth: 2, minLength: 0.2, foliageSize: 0.18, foliageVar: 0.1,
+        width: 2.1, depth: 1.4, height: 0.7,
+        density: 28, planeSize: 0.42,
+        flowerChance: 0.3,
         tipDecorate: (g, pos) => {
-          if (Math.random() < 0.55) {
-            const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
-            f.position.copy(pos); f.position.y += 0.06;
-            g.add(f);
-          }
+          const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
+          f.position.set(pos.x, pos.y + 0.04, pos.z);
+          g.add(f);
         }
       });
     }
@@ -3025,23 +3103,23 @@ const PLACEABLES = {
     footprint: 'Dense upright hedge · 5–6 ft',
     build: () => {
       const umbelMat = new T.MeshStandardMaterial({ color: 0xefe9d6, flatShading: true });
-      return _buildBranchTree({
+      // Tall column of dense foliage, like a hedge plant — short woody
+      // trunk visible at the base, foliage filling a narrow upright ellipsoid.
+      return _buildShrubCluster({
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
+        trunkHeight: 0.8, trunkRadius: 0.11,
         folMats: [
-          new T.MeshStandardMaterial({ color: 0x2d4d2a, flatShading: true }),
-          new T.MeshStandardMaterial({ color: 0x416a3b, flatShading: true })
+          new T.MeshStandardMaterial({ color: 0x2d4d2a }),
+          new T.MeshStandardMaterial({ color: 0x416a3b })
         ],
-        trunkHeight: 1.5, trunkRadius: [0.13, 0.1],
-        numMain: [5, 7], mainTilt: [0.35, 0.7], mainLength: [1.5, 2.0], mainRadius: 0.07,
-        maxDepth: 3, minLength: 0.35, foliageSize: 0.5, foliageVar: 0.22,
+        width: 1.5, depth: 1.5, height: 4.5, yBase: 0.4,
+        density: 38, planeSize: 0.85,
+        flowerChance: 0.18,
         tipDecorate: (g, pos) => {
-          // Characteristic white domed flower umbel on ~40% of tips
-          if (Math.random() < 0.4) {
-            const u = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), umbelMat);
-            u.position.copy(pos); u.position.y += 0.15;
-            u.scale.y = 0.55;
-            g.add(u);
-          }
+          const u = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), umbelMat);
+          u.position.set(pos.x, pos.y + 0.1, pos.z);
+          u.scale.y = 0.55;
+          g.add(u);
         }
       });
     }
@@ -3050,39 +3128,111 @@ const PLACEABLES = {
     name: 'Bougainvillea', category: 'Plants', icon: '🌺',
     footprint: 'Cascading magenta vine · 6–8 ft',
     build: () => {
-      const bractA = new T.MeshStandardMaterial({ color: 0xc4377d, side: T.DoubleSide });
-      const bractB = new T.MeshStandardMaterial({ color: 0xe04a8e, side: T.DoubleSide });
-      return _buildBranchTree({
-        woodMat: new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }),
-        folMats: [
-          new T.MeshStandardMaterial({ color: 0x3e6a36, flatShading: true }),
-          new T.MeshStandardMaterial({ color: 0x5a8a48, flatShading: true })
-        ],
-        trunkHeight: 1.4, trunkRadius: [0.32, 0.18],
-        numMain: [4, 6], mainTilt: [0.6, 1.1], mainLength: [1.8, 2.6], mainRadius: 0.1,
-        maxDepth: 3, minLength: 0.3, foliageSize: 0.32, foliageVar: 0.18,
-        lengthFactor: [0.65, 0.25],
-        tipDecorate: (g, pos) => {
-          // Cluster of magenta bract circles fanning out from each tip,
-          // tilted papery-thin and pointing slightly downward.
-          const num = 4 + Math.floor(Math.random() * 4);
-          for (let j = 0; j < num; j++) {
-            const a = Math.random() * Math.PI * 2;
-            const r = 0.18 + Math.random() * 0.1;
-            const bract = new T.Mesh(
-              new T.CircleGeometry(r, 6),
-              Math.random() < 0.6 ? bractA : bractB
-            );
-            bract.position.copy(pos);
-            bract.position.x += Math.cos(a) * 0.18;
-            bract.position.y += -0.05 + Math.random() * 0.2;
-            bract.position.z += Math.sin(a) * 0.18;
-            bract.lookAt(bract.position.x * 2, bract.position.y - 0.4, bract.position.z * 2);
-            bract.rotateZ(Math.random() * Math.PI * 2);
-            g.add(bract);
-          }
+      // Vine, not tree: short woody trunk + several long arching canes
+      // that lift up away from the trunk, peak, then droop. Foliage and
+      // magenta papery bracts cascade along the entire cane length, not
+      // just at the tips.
+      const g = new T.Group();
+      const woodMat = new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 });
+      if (woodMat.map !== barkTex) { woodMat.map = barkTex; woodMat.needsUpdate = true; }
+      const folMats = [
+        new T.MeshStandardMaterial({ color: 0x3e6a36 }),
+        new T.MeshStandardMaterial({ color: 0x5a8a48 })
+      ];
+      folMats.forEach(m => {
+        if (m.map !== leafTex) {
+          m.map = leafTex; m.alphaTest = 0.5; m.transparent = false;
+          m.side = T.DoubleSide; m.flatShading = false; m.needsUpdate = true;
         }
       });
+      const bractA = new T.MeshStandardMaterial({ color: 0xc4377d, side: T.DoubleSide });
+      const bractB = new T.MeshStandardMaterial({ color: 0xe04a8e, side: T.DoubleSide });
+
+      // Stubby woody trunk
+      const trunkH = 1.6;
+      const trunk = new T.Mesh(new T.CylinderGeometry(0.18, 0.32, trunkH, 6), woodMat);
+      trunk.position.y = trunkH / 2;
+      trunk.castShadow = true;
+      g.add(trunk);
+      const trunkTop = new T.Vector3(0, trunkH, 0);
+
+      // Build N canes that arc out, up, and then drop. Each cane is a
+      // chain of cylinder segments along a parametric arc.
+      const numCanes = 4 + Math.floor(Math.random() * 3);
+      for (let b = 0; b < numCanes; b++) {
+        const azimuth = (b / numCanes) * Math.PI * 2 + Math.random() * 0.5;
+        const dx = Math.cos(azimuth), dz = Math.sin(azimuth);
+        const reach = 3.5 + Math.random() * 1.5;            // horizontal span
+        const apexLift = reach * 0.4;                        // peak height above trunk top
+        const segments = 7;
+        let prev = trunkTop.clone();
+        for (let s = 0; s < segments; s++) {
+          const t = (s + 1) / segments;
+          // Parabolic arc: rises to apexLift at t≈0.4, then drops below trunkH.
+          const lift = -4 * apexLift * (t - 0.5) * (t - 0.5) + apexLift;
+          const droop = (t > 0.5 ? (t - 0.5) * 1.6 : 0) * apexLift;
+          const next = new T.Vector3(
+            dx * reach * t,
+            trunkH + lift - droop,
+            dz * reach * t
+          );
+          // Tapered cylinder for this segment
+          const delta = next.clone().sub(prev);
+          const segLen = delta.length();
+          const radiusEnd = 0.07 * (1 - t * 0.6);
+          const cyl = new T.Mesh(
+            new T.CylinderGeometry(radiusEnd * 0.8, radiusEnd, segLen, 5),
+            woodMat
+          );
+          cyl.position.copy(prev).add(next).multiplyScalar(0.5);
+          cyl.quaternion.setFromUnitVectors(new T.Vector3(0, 1, 0), delta.normalize());
+          cyl.castShadow = true;
+          g.add(cyl);
+
+          // Cross-billboard foliage along this segment
+          const folCount = 2 + (Math.random() < 0.5 ? 1 : 0);
+          for (let fc = 0; fc < folCount; fc++) {
+            const lerpT = Math.random();
+            const pos = prev.clone().lerp(next, lerpT);
+            pos.y -= 0.05 + Math.random() * 0.15;
+            const baseAng = Math.random() * Math.PI * 2;
+            const sw = 0.42 + Math.random() * 0.2, sh = 0.42 + Math.random() * 0.18;
+            for (let p = 0; p < 2; p++) {
+              const mat = folMats[Math.floor(Math.random() * folMats.length)];
+              const plane = new T.Mesh(new T.PlaneGeometry(sw, sh), mat);
+              plane.position.copy(pos);
+              plane.rotation.y = baseAng + p * Math.PI / 2;
+              plane.castShadow = true; plane.receiveShadow = true;
+              g.add(plane);
+            }
+          }
+
+          // Magenta bract clusters along the segment, biased to the
+          // outer half of the cane where flowering happens in real life.
+          if (s >= 1) {
+            const bractCount = 4 + Math.floor(Math.random() * 5);
+            for (let bk = 0; bk < bractCount; bk++) {
+              const a2 = Math.random() * Math.PI * 2;
+              const r2 = 0.16 + Math.random() * 0.1;
+              const bract = new T.Mesh(
+                new T.CircleGeometry(r2, 6),
+                Math.random() < 0.6 ? bractA : bractB
+              );
+              const lerpT = 0.2 + Math.random() * 0.8;
+              bract.position.copy(prev).lerp(next, lerpT);
+              bract.position.x += Math.cos(a2) * 0.22;
+              // Bracts hang below the cane
+              bract.position.y -= 0.12 + Math.random() * 0.35;
+              bract.position.z += Math.sin(a2) * 0.22;
+              bract.lookAt(bract.position.x * 1.6, bract.position.y - 0.5, bract.position.z * 1.6);
+              bract.rotateZ(Math.random() * Math.PI * 2);
+              g.add(bract);
+            }
+          }
+          prev = next;
+        }
+      }
+      return g;
     }
   },
   planter_medium: {
@@ -3740,9 +3890,22 @@ function restoreFrom(state) {
     }
   });
   placed.length = 0;
-  state.forEach(d => {
-    const builder = PLACEABLES[d.kind] && PLACEABLES[d.kind].build;
-    if (!builder) return;
+  // Defensive dedupe: if a snapshot accumulated duplicate items at the
+  // same kind+position (legacy bad state from earlier path-session bugs),
+  // collapse them to one. Quantize to 0.05 ft so near-identical positions
+  // collide. This is a no-op for healthy layouts.
+  const seen = new Set();
+  const cleanState = [];
+  for (const d of state) {
+    if (!d || !PLACEABLES[d.kind]) continue;
+    const key = d.kind + '|' + Math.round(d.x * 20) + '|' + Math.round(d.z * 20)
+              + '|' + Math.round((d.rot || 0) * 100);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    cleanState.push(d);
+  }
+  cleanState.forEach(d => {
+    const builder = PLACEABLES[d.kind].build;
     const mesh = builder();
     mesh.position.set(safeNum(d.x, 0), 0, safeNum(d.z, 0));
     mesh.rotation.y = safeNum(d.rot, 0);
@@ -4580,6 +4743,18 @@ function scheduleAutosave() {
       if (r && r.value) data = JSON.parse(r.value);
     }
     if (data && data.length) {
+      // Same defensive dedupe as restoreFrom — strips any duplicate
+      // items at the same kind+position+rotation that may have been
+      // saved during earlier path-session accumulation bugs.
+      const _seen = new Set();
+      data = data.filter(d => {
+        if (!d || !PLACEABLES[d.kind]) return false;
+        const key = d.kind + '|' + Math.round(d.x * 20) + '|' + Math.round(d.z * 20)
+                  + '|' + Math.round((d.rot || 0) * 100);
+        if (_seen.has(key)) return false;
+        _seen.add(key);
+        return true;
+      });
       data.forEach(d => {
         const builder = PLACEABLES[d.kind]?.build;
         if (!builder) return;
