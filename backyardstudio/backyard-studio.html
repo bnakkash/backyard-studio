@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v108</div>
+<div id="version">v109</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1665,6 +1665,58 @@ const bractTex = (() => {
     g.beginPath();
     g.arc(cxL, cyL, 3, 0, Math.PI * 2);
     g.fill();
+  }
+  const tex = new T.CanvasTexture(c);
+  tex.encoding = T.sRGBEncoding;
+  tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+  return tex;
+})();
+
+// Palm frond texture — wide aspect (256×64) with a central rachis and
+// many narrow elongated leaflets perpendicular to it on both sides.
+// Reads as a feathery pinnate palm leaf when stretched on a long plane.
+const frondTex = (() => {
+  const W = 256, H = 80;
+  const c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, W, H);
+  const rand = _seededRand(101);
+  const cy = H / 2;
+  // Rachis (central spine)
+  g.fillStyle = '#5a7438';
+  g.fillRect(2, cy - 1.4, W - 4, 2.8);
+  // Leaflets — pairs along the rachis, slightly fanned outward
+  const N = 36;
+  for (let i = 0; i < N; i++) {
+    const x = 6 + (i / (N - 1)) * (W - 12);
+    // Leaflet length tapers toward the tip of the frond
+    const tipFactor = 1 - Math.pow(Math.max(0, (x / W) - 0.5) * 2, 1.5) * 0.4;
+    const len = (24 + rand() * 8) * tipFactor;
+    const wd = 1.4 + rand() * 0.5;
+    const r = 130 + Math.floor(rand() * 50);
+    const gC = 165 + Math.floor(rand() * 35);
+    const b = 90 + Math.floor(rand() * 30);
+    const col = 'rgb(' + r + ',' + gC + ',' + b + ')';
+    // Top leaflet (angles upward & toward tip)
+    const angTop = -Math.PI / 2 + 0.2 + (x / W) * 0.15;
+    g.save();
+    g.translate(x, cy);
+    g.rotate(angTop);
+    g.fillStyle = col;
+    g.beginPath();
+    g.ellipse(0, len / 2, wd, len / 2, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
+    // Bottom leaflet (mirror)
+    g.save();
+    g.translate(x, cy);
+    g.rotate(Math.PI / 2 - 0.2 - (x / W) * 0.15);
+    g.fillStyle = col;
+    g.beginPath();
+    g.ellipse(0, len / 2, wd, len / 2, 0, 0, Math.PI * 2);
+    g.fill();
+    g.restore();
   }
   const tex = new T.CanvasTexture(c);
   tex.encoding = T.sRGBEncoding;
@@ -2519,30 +2571,88 @@ const PLACEABLES = {
     name: 'Palm Tree', category: 'Plants', icon: '🌴', footprint: 'Mature ~22 ft tall',
     build: () => {
       const g = new T.Group();
+      // Slimmer trunk for proper palm proportion (was stout). 18 ft tall,
+      // ~7 in diameter at base tapering to ~5 in at crown.
+      const trunkMat = new T.MeshStandardMaterial({ color: 0x9c7c54, map: barkTex, roughness: 0.92 });
       const trunk = new T.Mesh(
-        new T.CylinderGeometry(0.55, 0.8, 18, 10),
-        new T.MeshStandardMaterial({ color: 0x7a5f3f })
+        new T.CylinderGeometry(0.32, 0.5, 18, 12),
+        trunkMat
       );
-      trunk.position.y = 9; trunk.castShadow = true; g.add(trunk);
-      const frondMat = new T.MeshStandardMaterial({ color: 0x4a7a3a, side: T.DoubleSide });
-      for (let i = 0; i < 9; i++) {
-        const frond = new T.Mesh(new T.BoxGeometry(8, 0.18, 1.2), frondMat);
-        frond.position.x = 3.7;
-        frond.rotation.z = -0.18;
-        frond.castShadow = true;
-        const pivot = new T.Group();
-        pivot.add(frond);
-        pivot.rotation.y = (i / 9) * Math.PI * 2;
-        pivot.position.y = 18;
-        g.add(pivot);
+      trunk.position.y = 9; trunk.castShadow = true; trunk.receiveShadow = true;
+      g.add(trunk);
+      // Each frond = one long arched plane with a feather/pinnate
+      // texture (rachis + many leaflets perpendicular). Arches upward
+      // from the crown then droops at the tip. Two materials for color
+      // variety.
+      const frondMatA = new T.MeshStandardMaterial({
+        color: 0xbac8a0, map: frondTex, alphaTest: 0.4,
+        side: T.DoubleSide, transparent: false
+      });
+      const frondMatB = new T.MeshStandardMaterial({
+        color: 0x9bb98a, map: frondTex, alphaTest: 0.4,
+        side: T.DoubleSide, transparent: false
+      });
+      const NUM_FRONDS = 12;
+      const FROND_LEN = 9;
+      const FROND_W = 2.0;
+      // Build the frond geometry by sampling along an arching curve.
+      // Each frond is a tapered ribbon (BufferGeometry) that follows
+      // the curve so the leaflet texture reads correctly along its
+      // length AND the frond visibly droops at the tip.
+      function buildFrondGeom() {
+        const segs = 10;
+        const verts = [];
+        const uvs = [];
+        const idx = [];
+        for (let s = 0; s <= segs; s++) {
+          const t = s / segs;
+          // Position along the frond's local +X axis
+          const x = t * FROND_LEN;
+          // Vertical arch: lifts at base, peaks early, droops at tip
+          const y = Math.sin(t * Math.PI * 0.55) * 1.6 - Math.pow(t, 2.2) * 4.0;
+          // Width tapers slightly toward the tip
+          const w = (1 - t * 0.35) * FROND_W * 0.5;
+          // Two vertices per segment (top and bottom edge of the ribbon)
+          verts.push(x, y, -w);
+          verts.push(x, y, +w);
+          uvs.push(t, 0);
+          uvs.push(t, 1);
+          if (s < segs) {
+            const a = s * 2;
+            // Two triangles per segment (a quad)
+            idx.push(a, a + 1, a + 2);
+            idx.push(a + 1, a + 3, a + 2);
+          }
+        }
+        const geom = new T.BufferGeometry();
+        geom.setAttribute('position', new T.Float32BufferAttribute(verts, 3));
+        geom.setAttribute('uv', new T.Float32BufferAttribute(uvs, 2));
+        geom.setIndex(idx);
+        geom.computeVertexNormals();
+        return geom;
       }
-      // Coconuts
-      const coconut = new T.Mesh(
-        new T.SphereGeometry(0.45, 6, 5),
-        new T.MeshStandardMaterial({ color: 0x2a1d10 })
-      );
-      coconut.position.set(0.5, 17.5, 0.4);
-      g.add(coconut);
+      const frondGeom = buildFrondGeom();
+      for (let i = 0; i < NUM_FRONDS; i++) {
+        const azimuth = (i / NUM_FRONDS) * Math.PI * 2 + (Math.random() - 0.5) * 0.18;
+        const tilt = (Math.random() - 0.5) * 0.15;
+        const mat = Math.random() < 0.5 ? frondMatA : frondMatB;
+        const frond = new T.Mesh(frondGeom, mat);
+        frond.position.set(0, 18, 0);
+        frond.rotation.y = azimuth;
+        frond.rotation.z = tilt;
+        frond.castShadow = true;
+        frond.receiveShadow = true;
+        g.add(frond);
+      }
+      // Coconuts cluster under the crown
+      const coconutMat = new T.MeshStandardMaterial({ color: 0x4a3424, roughness: 0.85 });
+      for (let k = 0; k < 5; k++) {
+        const a = (k / 5) * Math.PI * 2;
+        const c = new T.Mesh(new T.SphereGeometry(0.32, 6, 5), coconutMat);
+        c.position.set(Math.cos(a) * 0.5, 17.6, Math.sin(a) * 0.5);
+        c.castShadow = true;
+        g.add(c);
+      }
       return g;
     }
   },
@@ -2559,8 +2669,10 @@ const PLACEABLES = {
           new T.MeshStandardMaterial({ color: 0x456e34 }),
           new T.MeshStandardMaterial({ color: 0x5a8a48 })
         ],
-        width: 1.3, depth: 1.3, height: 1.7,
-        density: 26, planeSize: 0.7,
+        // Tighter ellipsoid + much denser planes so the shrub reads as
+        // a unified mound, not scattered floating clumps.
+        width: 1.2, depth: 1.2, height: 1.6,
+        density: 60, planeSize: 0.85,
         flowerChance: 0.22,
         tipDecorate: (g, pos) => {
           const f = new T.Mesh(new T.SphereGeometry(0.07, 5, 4), flowerMat);
@@ -2991,9 +3103,11 @@ const PLACEABLES = {
           new T.MeshStandardMaterial({ color: 0x9bb085 }),
           new T.MeshStandardMaterial({ color: 0xb6c89c })
         ],
-        width: 2.1, depth: 1.4, height: 0.7,
-        density: 32, planeSize: 0.45,
-        flowerChance: 0.3,
+        width: 1.9, depth: 1.3, height: 0.65,
+        // Much denser + bigger needle clusters so the silvery sprawl
+        // reads as one continuous mat instead of detached tumbleweeds.
+        density: 70, planeSize: 0.6,
+        flowerChance: 0.22,
         tipDecorate: (g, pos) => {
           const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
           f.position.set(pos.x, pos.y + 0.04, pos.z);
@@ -3025,13 +3139,15 @@ const PLACEABLES = {
         foliageSize: 1.1, foliageVar: 0.35,
         tipDecorate: (g, pos) => {
           // Clustered ripe oranges hanging from the fruiting tips.
-          const num = 3 + Math.floor(Math.random() * 4);
+          // Bigger spheres so the fruit actually reads as oranges rather
+          // than being lost in the foliage canopy.
+          const num = 4 + Math.floor(Math.random() * 4);
           for (let j = 0; j < num; j++) {
-            const o = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), orangeMat);
+            const o = new T.Mesh(new T.SphereGeometry(0.32, 8, 6), orangeMat);
             o.position.copy(pos);
-            o.position.x += (Math.random() - 0.5) * 1.0;
-            o.position.y += (Math.random() - 0.5) * 0.8;
-            o.position.z += (Math.random() - 0.5) * 1.0;
+            o.position.x += (Math.random() - 0.5) * 0.9;
+            o.position.y += (Math.random() - 0.5) * 0.7;
+            o.position.z += (Math.random() - 0.5) * 0.9;
             o.castShadow = true;
             g.add(o);
           }
