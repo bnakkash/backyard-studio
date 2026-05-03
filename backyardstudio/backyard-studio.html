@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v104</div>
+<div id="version">v105</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -1549,44 +1549,163 @@ const barkTex = _canvasTex(256, (g, S) => {
 // with alpha. Used on intersecting planes to fake 3D foliage volume.
 // Drawn in mostly-white tones so the material's `color` provides the
 // per-species green tint.
-const leafTex = (() => {
+// Procedural leaf-cluster texture used as alpha map on cross-billboard
+// planes. Densely packed, with a 2-pass shading (back layer = darker
+// shadow tones, front layer = brighter highlights) to suggest depth
+// inside the cluster. Boundary is intentionally irregular so the
+// silhouette doesn't read as a perfect ellipse.
+function _buildLeafTex(opts) {
   const SIZE = 256;
   const c = document.createElement('canvas');
   c.width = c.height = SIZE;
   const g = c.getContext('2d');
   g.clearRect(0, 0, SIZE, SIZE);
-  const rand = _seededRand(41);
+  const rand = _seededRand(opts.seed || 41);
   const cx = SIZE / 2, cy = SIZE / 2;
-  // Generate ~70 small leaf-shaped ellipses radiating from cluster center.
-  for (let i = 0; i < 70; i++) {
-    // Cluster radius is biased toward center (squared distribution) so
-    // the silhouette is denser in the middle, sparser at the edge.
-    const t = rand();
-    const r = SIZE * 0.42 * t * t;
-    const a = rand() * Math.PI * 2;
-    const x = cx + Math.cos(a) * r;
-    const y = cy + Math.sin(a) * r;
-    const leafL = 11 + rand() * 16;
-    const leafW = leafL * (0.45 + rand() * 0.2);
-    const ang = rand() * Math.PI * 2;
-    // Slight per-leaf brightness variance — the material color tints overall.
-    const bright = 200 + Math.floor(rand() * 55);
-    g.save();
-    g.translate(x, y);
-    g.rotate(ang);
-    g.fillStyle = 'rgb(' + bright + ',' + (bright + 5) + ',' + (bright - 10) + ')';
-    g.beginPath();
-    g.ellipse(0, 0, leafW, leafL, 0, 0, Math.PI * 2);
-    g.fill();
-    // Subtle midrib vein
-    g.strokeStyle = 'rgba(120, 130, 110, 0.45)';
-    g.lineWidth = 1;
-    g.beginPath();
-    g.moveTo(0, -leafL * 0.95);
-    g.lineTo(0, leafL * 0.95);
-    g.stroke();
-    g.restore();
+  const innerR = SIZE * 0.42;
+  function drawLeaves(count, brightLo, brightHi, leafLo, leafHi, vein) {
+    for (let i = 0; i < count; i++) {
+      const t = rand();
+      const r = innerR * Math.pow(t, 0.7); // slightly less center-biased so edges still get leaves
+      const a = rand() * Math.PI * 2;
+      // Add subtle radial noise so the cluster boundary isn't perfectly round
+      const radialNoise = 1 + (Math.sin(a * 5) + Math.sin(a * 8 + 1.3)) * 0.05;
+      const x = cx + Math.cos(a) * r * radialNoise;
+      const y = cy + Math.sin(a) * r * radialNoise;
+      const leafL = leafLo + rand() * (leafHi - leafLo);
+      const leafW = leafL * (0.40 + rand() * 0.25);
+      const ang = rand() * Math.PI * 2;
+      const bright = brightLo + Math.floor(rand() * (brightHi - brightLo));
+      g.save();
+      g.translate(x, y);
+      g.rotate(ang);
+      g.fillStyle = 'rgb(' + bright + ',' + (bright + 6) + ',' + (bright - 14) + ')';
+      g.beginPath();
+      g.ellipse(0, 0, leafW, leafL, 0, 0, Math.PI * 2);
+      g.fill();
+      // Faint outline darkens leaf edges so individual leaves read.
+      g.strokeStyle = 'rgba(60, 75, 50, 0.35)';
+      g.lineWidth = 0.8;
+      g.stroke();
+      if (vein) {
+        g.strokeStyle = 'rgba(50, 65, 45, 0.5)';
+        g.lineWidth = 1;
+        g.beginPath();
+        g.moveTo(0, -leafL * 0.92);
+        g.lineTo(0, leafL * 0.92);
+        g.stroke();
+      }
+      g.restore();
+    }
   }
+  // Pass 1: shadow layer — many darker leaves, slightly larger, fills
+  // the back of the cluster. Provides the "depth" feel.
+  drawLeaves(160, 90, 135, 12, 22, false);
+  // Pass 2: lit layer — fewer leaves, brighter, on top. Shows highlight
+  // on sun-facing surfaces.
+  drawLeaves(120, 200, 250, 11, 20, true);
+  const tex = new T.CanvasTexture(c);
+  tex.encoding = T.sRGBEncoding;
+  tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+  return tex;
+}
+const leafTex = _buildLeafTex({ seed: 41 });
+
+// Bougainvillea bract cluster: 3 overlapping papery triangles in a
+// fan, around a tiny white flower center. Real bougainvillea "flowers"
+// are actually clusters of 3 magenta bracts surrounding 3 small white
+// flowers. Drawn as silhouette-only (white-pink) so material color
+// tints can shift the pink.
+const bractTex = (() => {
+  const SIZE = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, SIZE, SIZE);
+  const rand = _seededRand(67);
+  // Draw multiple bract clusters around the canvas so cross-billboards
+  // showing the texture have natural variation regardless of UV crop.
+  for (let cluster = 0; cluster < 9; cluster++) {
+    const cxL = 40 + (cluster % 3) * 88;
+    const cyL = 40 + Math.floor(cluster / 3) * 88;
+    // Each cluster has 3 papery bracts arranged 120° apart.
+    const baseAng = rand() * Math.PI * 2;
+    for (let i = 0; i < 3; i++) {
+      const ang = baseAng + (i * Math.PI * 2) / 3 + (rand() - 0.5) * 0.2;
+      // Slightly different magenta per bract for natural variation.
+      const v = rand();
+      const r = 200 + Math.floor(v * 50);
+      const gC = 200 + Math.floor(v * 30);
+      const b = 220 + Math.floor(v * 35);
+      g.save();
+      g.translate(cxL, cyL);
+      g.rotate(ang);
+      g.fillStyle = 'rgb(' + r + ',' + gC + ',' + b + ')';
+      // Triangular papery bract shape, pointed outward.
+      const w = 18 + rand() * 6, h = 32 + rand() * 8;
+      g.beginPath();
+      g.moveTo(0, 0);
+      g.quadraticCurveTo(-w, h * 0.45, 0, h);
+      g.quadraticCurveTo(w, h * 0.45, 0, 0);
+      g.fill();
+      // Edge dark veining
+      g.strokeStyle = 'rgba(120, 100, 110, 0.4)';
+      g.lineWidth = 0.8;
+      g.stroke();
+      // Center vein
+      g.beginPath();
+      g.moveTo(0, 2);
+      g.lineTo(0, h - 2);
+      g.strokeStyle = 'rgba(140, 110, 120, 0.5)';
+      g.stroke();
+      g.restore();
+    }
+    // Tiny white flower center
+    g.fillStyle = '#fffaef';
+    g.beginPath();
+    g.arc(cxL, cyL, 3, 0, Math.PI * 2);
+    g.fill();
+  }
+  const tex = new T.CanvasTexture(c);
+  tex.encoding = T.sRGBEncoding;
+  tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
+  return tex;
+})();
+
+// Needle-leaf cluster for plants like rosemary, lavender, false rosemary.
+// Many tiny narrow elongated leaves rather than broad ovals.
+const needleTex = (() => {
+  const SIZE = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = SIZE;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, SIZE, SIZE);
+  const rand = _seededRand(83);
+  const cx = SIZE / 2, cy = SIZE / 2;
+  const innerR = SIZE * 0.45;
+  function drawNeedles(count, brightLo, brightHi) {
+    for (let i = 0; i < count; i++) {
+      const t = rand();
+      const r = innerR * Math.pow(t, 0.6);
+      const a = rand() * Math.PI * 2;
+      const x = cx + Math.cos(a) * r;
+      const y = cy + Math.sin(a) * r;
+      const len = 5 + rand() * 8;
+      const wd = 1.2 + rand() * 0.6;
+      const ang = rand() * Math.PI * 2;
+      const bright = brightLo + Math.floor(rand() * (brightHi - brightLo));
+      g.save();
+      g.translate(x, y);
+      g.rotate(ang);
+      g.fillStyle = 'rgb(' + bright + ',' + (bright + 8) + ',' + (bright - 18) + ')';
+      g.beginPath();
+      g.ellipse(0, 0, wd, len, 0, 0, Math.PI * 2);
+      g.fill();
+      g.restore();
+    }
+  }
+  drawNeedles(220, 120, 165);  // shadow layer
+  drawNeedles(180, 210, 250);  // lit layer
   const tex = new T.CanvasTexture(c);
   tex.encoding = T.sRGBEncoding;
   tex.wrapS = tex.wrapT = T.ClampToEdgeWrapping;
@@ -2249,9 +2368,11 @@ function _buildShrubCluster(opts) {
   const folMats = opts.folMats || [];
   const tipDecorate = opts.tipDecorate;
   // Augment foliage materials for cross-billboard alpha rendering.
+  // Caller can override with opts.foliageTex (e.g. needleTex for rosemary).
+  const fTex = opts.foliageTex || leafTex;
   folMats.forEach(m => {
-    if (m.map !== leafTex) {
-      m.map = leafTex;
+    if (m.map !== fTex) {
+      m.map = fTex;
       m.alphaTest = 0.5;
       m.transparent = false;
       m.side = T.DoubleSide;
@@ -2816,15 +2937,16 @@ const PLACEABLES = {
     footprint: 'Low silvery sprawling shrub',
     build: () => {
       const flowerMat = new T.MeshStandardMaterial({ color: 0xb89bd6 });
-      // Wide, flat, silvery sprawl — much wider than tall; foliage
-      // hugs the ground.
+      // Wide, flat, silvery sprawl with NEEDLE leaves (not broad
+      // leaves). Many tiny narrow leaves, hugs the ground.
       return _buildShrubCluster({
+        foliageTex: needleTex,
         folMats: [
-          new T.MeshStandardMaterial({ color: 0x95a87f }),
-          new T.MeshStandardMaterial({ color: 0xb0bf95 })
+          new T.MeshStandardMaterial({ color: 0x9bb085 }),
+          new T.MeshStandardMaterial({ color: 0xb6c89c })
         ],
         width: 2.1, depth: 1.4, height: 0.7,
-        density: 28, planeSize: 0.42,
+        density: 32, planeSize: 0.45,
         flowerChance: 0.3,
         tipDecorate: (g, pos) => {
           const f = new T.Mesh(new T.SphereGeometry(0.05, 5, 4), flowerMat);
@@ -3116,10 +3238,33 @@ const PLACEABLES = {
     name: 'Viburnum', category: 'Plants', icon: '🌱',
     footprint: 'Dense upright hedge · 5–6 ft',
     build: () => {
-      const umbelMat = new T.MeshStandardMaterial({ color: 0xefe9d6, flatShading: true });
-      // Multi-stem upright clump with dense foliage filling a narrow
-      // column. The 4-5 woody stems are visible structurally through
-      // the leaves — the foliage doesn't just float.
+      // White "snowball" umbels are a defining feature of viburnum —
+      // make them bigger and bumpier so they read as proper flower
+      // heads rather than tiny dots. Built from a few overlapping
+      // sub-spheres for a snowball texture, scattered through the foliage.
+      function makeUmbel() {
+        const u = new T.Group();
+        const umbelMat = new T.MeshStandardMaterial({ color: 0xf2eedb, flatShading: true });
+        const baseR = 0.22 + Math.random() * 0.08;
+        const main = new T.Mesh(new T.IcosahedronGeometry(baseR, 1), umbelMat);
+        main.castShadow = true;
+        u.add(main);
+        // 4-6 little bumps around it for the cluster-of-tiny-flowers look
+        const bumps = 4 + Math.floor(Math.random() * 3);
+        for (let i = 0; i < bumps; i++) {
+          const a = (i / bumps) * Math.PI * 2 + Math.random() * 0.5;
+          const r = baseR * 0.5;
+          const bump = new T.Mesh(new T.IcosahedronGeometry(r, 0), umbelMat);
+          bump.position.set(
+            Math.cos(a) * baseR * 0.85,
+            (Math.random() - 0.3) * baseR * 0.6,
+            Math.sin(a) * baseR * 0.85
+          );
+          u.add(bump);
+        }
+        u.scale.y = 0.6; // squashed dome
+        return u;
+      }
       return _buildShrubCluster({
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
         numStems: 4 + Math.floor(Math.random() * 2),
@@ -3129,13 +3274,12 @@ const PLACEABLES = {
           new T.MeshStandardMaterial({ color: 0x2d4d2a }),
           new T.MeshStandardMaterial({ color: 0x416a3b })
         ],
-        width: 1.4, depth: 1.4, height: 4.5, yBase: 0.4,
-        density: 40, planeSize: 0.8,
-        flowerChance: 0.18,
+        width: 1.5, depth: 1.5, height: 4.6, yBase: 0.4,
+        density: 44, planeSize: 0.85,
+        flowerChance: 0.30,  // ~30% of foliage planes get an umbel nearby
         tipDecorate: (g, pos) => {
-          const u = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), umbelMat);
-          u.position.set(pos.x, pos.y + 0.1, pos.z);
-          u.scale.y = 0.55;
+          const u = makeUmbel();
+          u.position.set(pos.x, pos.y + 0.15, pos.z);
           g.add(u);
         }
       });
@@ -3162,8 +3306,14 @@ const PLACEABLES = {
           m.side = T.DoubleSide; m.flatShading = false; m.needsUpdate = true;
         }
       });
-      const bractA = new T.MeshStandardMaterial({ color: 0xc4377d, side: T.DoubleSide });
-      const bractB = new T.MeshStandardMaterial({ color: 0xe04a8e, side: T.DoubleSide });
+      const bractMatA = new T.MeshStandardMaterial({
+        color: 0xc4377d, map: bractTex, alphaTest: 0.5,
+        side: T.DoubleSide, transparent: false
+      });
+      const bractMatB = new T.MeshStandardMaterial({
+        color: 0xe04a8e, map: bractTex, alphaTest: 0.5,
+        side: T.DoubleSide, transparent: false
+      });
 
       // Stubby woody trunk
       const trunkH = 1.6;
@@ -3227,27 +3377,32 @@ const PLACEABLES = {
             }
           }
 
-          // Magenta bract clusters along the segment, biased to the
-          // outer half of the cane where flowering happens in real life.
-          // Smaller and fewer than v102 — was reading as one giant blob.
-          if (s >= 1) {
-            const bractCount = 1 + Math.floor(Math.random() * 3);
-            for (let bk = 0; bk < bractCount; bk++) {
+          // Bract cluster: dense pink cross-billboards using the
+          // 3-papery-bract texture. Real bougainvillea reads as a wall
+          // of pink, so we lay them thick along the cane.
+          if (s >= 0) {
+            const bractClusters = 4 + Math.floor(Math.random() * 4);
+            for (let bk = 0; bk < bractClusters; bk++) {
+              const lerpT = Math.random();
+              const pos = prev.clone().lerp(next, lerpT);
+              // Spread perpendicular to the cane, slightly drooping
               const a2 = Math.random() * Math.PI * 2;
-              const r2 = 0.08 + Math.random() * 0.06;
-              const bract = new T.Mesh(
-                new T.CircleGeometry(r2, 6),
-                Math.random() < 0.6 ? bractA : bractB
-              );
-              const lerpT = 0.2 + Math.random() * 0.8;
-              bract.position.copy(prev).lerp(next, lerpT);
-              bract.position.x += Math.cos(a2) * 0.13;
-              // Bracts cluster close to the cane, slightly drooping below.
-              bract.position.y -= 0.05 + Math.random() * 0.13;
-              bract.position.z += Math.sin(a2) * 0.13;
-              bract.lookAt(bract.position.x * 1.6, bract.position.y - 0.5, bract.position.z * 1.6);
-              bract.rotateZ(Math.random() * Math.PI * 2);
-              g.add(bract);
+              const off = 0.15 + Math.random() * 0.18;
+              pos.x += Math.cos(a2) * off;
+              pos.y -= 0.04 + Math.random() * 0.16;
+              pos.z += Math.sin(a2) * off;
+              const sz = 0.42 + Math.random() * 0.22;
+              const baseAng = Math.random() * Math.PI * 2;
+              const mat = Math.random() < 0.5 ? bractMatA : bractMatB;
+              // Cross-billboard pair so cluster reads from any angle.
+              for (let p = 0; p < 2; p++) {
+                const plane = new T.Mesh(new T.PlaneGeometry(sz, sz), mat);
+                plane.position.copy(pos);
+                plane.rotation.y = baseAng + p * Math.PI / 2;
+                plane.castShadow = true;
+                plane.receiveShadow = true;
+                g.add(plane);
+              }
             }
           }
           prev = next;
