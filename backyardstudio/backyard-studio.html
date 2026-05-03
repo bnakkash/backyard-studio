@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v103</div>
+<div id="version">v104</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2259,8 +2259,11 @@ function _buildShrubCluster(opts) {
       m.needsUpdate = true;
     }
   });
-  // Optional short woody trunk/stems (visible at the base of an upright
-  // shrub like viburnum; omitted for low ground covers).
+  // Optional woody trunk(s)/stems visible through the foliage. Single
+  // stem (numStems=1 default) is right for things with one main trunk;
+  // multiple stems splay out from the base for shrubs that grow as a
+  // clump (viburnum, hedges) — they extend tall enough to be visible
+  // structurally inside the foliage column.
   if (opts.trunkHeight && opts.trunkHeight > 0) {
     const woodMat = opts.woodMat || new T.MeshStandardMaterial({ color: 0x4a3828, roughness: 0.95 });
     if (woodMat.map !== barkTex) {
@@ -2268,13 +2271,24 @@ function _buildShrubCluster(opts) {
       woodMat.needsUpdate = true;
     }
     const r = opts.trunkRadius || 0.12;
-    const trunk = new T.Mesh(
-      new T.CylinderGeometry(r * 0.85, r, opts.trunkHeight, 6),
-      woodMat
-    );
-    trunk.position.y = opts.trunkHeight / 2;
-    trunk.castShadow = true;
-    g.add(trunk);
+    const numStems = Math.max(1, opts.numStems || 1);
+    const stemSpread = opts.stemSpread || 0.18;
+    for (let s = 0; s < numStems; s++) {
+      const ang = (s / numStems) * Math.PI * 2 + Math.random() * 0.4;
+      const dist = numStems > 1 ? stemSpread * (0.5 + Math.random() * 0.5) : 0;
+      const stem = new T.Mesh(
+        new T.CylinderGeometry(r * 0.78, r, opts.trunkHeight, 6),
+        woodMat
+      );
+      stem.position.set(Math.cos(ang) * dist, opts.trunkHeight / 2, Math.sin(ang) * dist);
+      // Slight outward tilt for the stem-clump feel
+      if (numStems > 1) {
+        stem.rotation.z = -Math.cos(ang) * 0.12;
+        stem.rotation.x = Math.sin(ang) * 0.12;
+      }
+      stem.castShadow = true;
+      g.add(stem);
+    }
   }
   // Distribute cross-billboard foliage planes throughout an ellipsoid.
   const w = opts.width || 1.2;
@@ -3103,17 +3117,20 @@ const PLACEABLES = {
     footprint: 'Dense upright hedge · 5–6 ft',
     build: () => {
       const umbelMat = new T.MeshStandardMaterial({ color: 0xefe9d6, flatShading: true });
-      // Tall column of dense foliage, like a hedge plant — short woody
-      // trunk visible at the base, foliage filling a narrow upright ellipsoid.
+      // Multi-stem upright clump with dense foliage filling a narrow
+      // column. The 4-5 woody stems are visible structurally through
+      // the leaves — the foliage doesn't just float.
       return _buildShrubCluster({
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
-        trunkHeight: 0.8, trunkRadius: 0.11,
+        numStems: 4 + Math.floor(Math.random() * 2),
+        stemSpread: 0.35,
+        trunkHeight: 4.0, trunkRadius: 0.06,
         folMats: [
           new T.MeshStandardMaterial({ color: 0x2d4d2a }),
           new T.MeshStandardMaterial({ color: 0x416a3b })
         ],
-        width: 1.5, depth: 1.5, height: 4.5, yBase: 0.4,
-        density: 38, planeSize: 0.85,
+        width: 1.4, depth: 1.4, height: 4.5, yBase: 0.4,
+        density: 40, planeSize: 0.8,
         flowerChance: 0.18,
         tipDecorate: (g, pos) => {
           const u = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), umbelMat);
@@ -3162,18 +3179,21 @@ const PLACEABLES = {
       for (let b = 0; b < numCanes; b++) {
         const azimuth = (b / numCanes) * Math.PI * 2 + Math.random() * 0.5;
         const dx = Math.cos(azimuth), dz = Math.sin(azimuth);
-        const reach = 3.5 + Math.random() * 1.5;            // horizontal span
-        const apexLift = reach * 0.4;                        // peak height above trunk top
+        const reach = 3.0 + Math.random() * 1.2;            // horizontal span
+        const apexLift = reach * 0.32;                       // peak height above trunk top
         const segments = 7;
         let prev = trunkTop.clone();
         for (let s = 0; s < segments; s++) {
           const t = (s + 1) / segments;
-          // Parabolic arc: rises to apexLift at t≈0.4, then drops below trunkH.
+          // Parabolic arc that rises to apexLift around t=0.5 then
+          // gently descends. Capped so the cane stays above ~30% of
+          // trunk height — no head-crab cane crashing to the ground.
           const lift = -4 * apexLift * (t - 0.5) * (t - 0.5) + apexLift;
-          const droop = (t > 0.5 ? (t - 0.5) * 1.6 : 0) * apexLift;
+          const droopAmt = (t > 0.5 ? (t - 0.5) * 0.7 : 0) * apexLift;
+          const yEnd = Math.max(trunkH * 0.35, trunkH + lift - droopAmt);
           const next = new T.Vector3(
             dx * reach * t,
-            trunkH + lift - droop,
+            yEnd,
             dz * reach * t
           );
           // Tapered cylinder for this segment
@@ -3209,21 +3229,22 @@ const PLACEABLES = {
 
           // Magenta bract clusters along the segment, biased to the
           // outer half of the cane where flowering happens in real life.
+          // Smaller and fewer than v102 — was reading as one giant blob.
           if (s >= 1) {
-            const bractCount = 4 + Math.floor(Math.random() * 5);
+            const bractCount = 1 + Math.floor(Math.random() * 3);
             for (let bk = 0; bk < bractCount; bk++) {
               const a2 = Math.random() * Math.PI * 2;
-              const r2 = 0.16 + Math.random() * 0.1;
+              const r2 = 0.08 + Math.random() * 0.06;
               const bract = new T.Mesh(
                 new T.CircleGeometry(r2, 6),
                 Math.random() < 0.6 ? bractA : bractB
               );
               const lerpT = 0.2 + Math.random() * 0.8;
               bract.position.copy(prev).lerp(next, lerpT);
-              bract.position.x += Math.cos(a2) * 0.22;
-              // Bracts hang below the cane
-              bract.position.y -= 0.12 + Math.random() * 0.35;
-              bract.position.z += Math.sin(a2) * 0.22;
+              bract.position.x += Math.cos(a2) * 0.13;
+              // Bracts cluster close to the cane, slightly drooping below.
+              bract.position.y -= 0.05 + Math.random() * 0.13;
+              bract.position.z += Math.sin(a2) * 0.13;
               bract.lookAt(bract.position.x * 1.6, bract.position.y - 0.5, bract.position.z * 1.6);
               bract.rotateZ(Math.random() * Math.PI * 2);
               g.add(bract);
