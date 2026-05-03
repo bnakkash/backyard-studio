@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v107</div>
+<div id="version">v108</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -2288,10 +2288,11 @@ function _buildBranchTree(opts) {
     cyl.castShadow = true;
     g.add(cyl);
   }
-  // Foliage cluster as cross-billboards: 2 perpendicular alpha-cutout
-  // planes so the clump reads as a 3D volume from any angle without the
-  // tell-tale icosphere silhouette. 1–2 clusters per terminal tip,
-  // each slightly offset for natural variation.
+  // Foliage cluster: 3 alpha-cutout planes per cluster to give 3-axis
+  // volume — two vertical planes perpendicular to each other (the
+  // classic cross-billboard) plus a horizontal cap rotated 45° off-axis,
+  // so top-down views don't read as just two edge-on lines crossing.
+  // 1–2 clusters per terminal tip.
   function addFoliage(pos, size) {
     if (!folMats.length) return;
     const clusters = 1 + (Math.random() < 0.45 ? 1 : 0);
@@ -2302,16 +2303,27 @@ function _buildBranchTree(opts) {
       const ox = (Math.random() - 0.5) * size * 0.5;
       const oy = (Math.random() - 0.5) * size * 0.4;
       const oz = (Math.random() - 0.5) * size * 0.5;
-      // 2 perpendicular planes intersecting at the cluster center.
+      const cx = pos.x + ox, cy = pos.y + oy, cz = pos.z + oz;
+      // Plane 1+2: vertical, perpendicular to each other.
       for (let p = 0; p < 2; p++) {
         const mat = folMats[Math.floor(Math.random() * folMats.length)];
         const plane = new T.Mesh(new T.PlaneGeometry(w, h), mat);
-        plane.position.set(pos.x + ox, pos.y + oy, pos.z + oz);
+        plane.position.set(cx, cy, cz);
         plane.rotation.y = baseAng + p * Math.PI / 2;
         plane.castShadow = true;
         plane.receiveShadow = true;
         g.add(plane);
       }
+      // Plane 3: horizontal-ish cap, slightly tilted, rotated 45° off
+      // the others on Y so it fills the X-cross gap when viewed from above.
+      const matCap = folMats[Math.floor(Math.random() * folMats.length)];
+      const cap = new T.Mesh(new T.PlaneGeometry(w * 0.9, h * 0.9), matCap);
+      cap.position.set(cx, cy + h * 0.15, cz);
+      cap.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+      cap.rotation.z = baseAng + Math.PI / 4;
+      cap.castShadow = true;
+      cap.receiveShadow = true;
+      g.add(cap);
     }
   }
   function grow(start, dir, length, radius, depth) {
@@ -2457,7 +2469,9 @@ function _buildShrubCluster(opts) {
     const baseAng = Math.random() * Math.PI * 2;
     const sw = planeSize * (0.85 + Math.random() * 0.4);
     const sh = planeSize * (0.75 + Math.random() * 0.4);
-    // Cross-billboard pair.
+    // 3-axis cluster: 2 vertical perpendicular + 1 tilted-horizontal cap
+    // so the cluster has volume from any angle (no edge-on disappearing
+    // from above). The cap uses a slightly random tilt for natural variety.
     for (let p = 0; p < 2; p++) {
       const mat = folMats[Math.floor(Math.random() * folMats.length)];
       const plane = new T.Mesh(new T.PlaneGeometry(sw, sh), mat);
@@ -2467,6 +2481,14 @@ function _buildShrubCluster(opts) {
       plane.receiveShadow = true;
       g.add(plane);
     }
+    const matCap = folMats[Math.floor(Math.random() * folMats.length)];
+    const cap = new T.Mesh(new T.PlaneGeometry(sw * 0.9, sh * 0.9), matCap);
+    cap.position.set(px, py + sh * 0.12, pz);
+    cap.rotation.x = -Math.PI / 2 + (Math.random() - 0.5) * 0.4;
+    cap.rotation.z = baseAng + Math.PI / 4;
+    cap.castShadow = true;
+    cap.receiveShadow = true;
+    g.add(cap);
     // Optional flower fleck on a fraction of the planes.
     if (tipDecorate && Math.random() < flowerChance) {
       tipDecorate(g, { x: px, y: py, z: pz }, planeSize);
@@ -2984,27 +3006,32 @@ const PLACEABLES = {
     name: 'Orange Tree', category: 'Plants', icon: '🍊', footprint: 'Citrus, ~12 ft tall',
     build: () => {
       const orangeMat = new T.MeshStandardMaterial({ color: 0xe08a2e, roughness: 0.65 });
-      // Built directly at full citrus-tree size (~12 ft tall) so the
-      // user-visible scale slider (50%–200%) operates around 1× as
-      // expected. Numbers are 5× the previous build-then-scale params.
+      // Citrus proportions — short trunk for a small fruit tree, then
+      // a dense rounded canopy. Earlier numbers were a 5× scale-up of
+      // a tiny build, which combined with the cross-billboard switch
+      // produced ~4 ft-wide leaf planes that looked like floating
+      // clouds with no visible structure beneath them. These values are
+      // sized for a real ~12 ft mature orange tree.
       const tree = _buildBranchTree({
-        woodMat: new T.MeshStandardMaterial({ color: 0x5a4028, roughness: 0.95 }),
+        woodMat: new T.MeshStandardMaterial({ color: 0x6a4e30, roughness: 0.92 }),
         folMats: [
-          new T.MeshStandardMaterial({ color: 0x355d2e, flatShading: true }),
-          new T.MeshStandardMaterial({ color: 0x4a7a40, flatShading: true })
+          new T.MeshStandardMaterial({ color: 0x355d2e }),
+          new T.MeshStandardMaterial({ color: 0x4a7a40 }),
+          new T.MeshStandardMaterial({ color: 0x6a9450 })
         ],
-        trunkHeight: 5.0, trunkRadius: [1.3, 0.9],
-        numMain: [4, 5], mainTilt: [0.6, 0.95], mainLength: [5.0, 7.0], mainRadius: 0.5,
-        maxDepth: 3, minLength: 1.5, foliageSize: 2.25, foliageVar: 1.0,
+        trunkHeight: 3.5, trunkRadius: [0.32, 0.22],
+        numMain: [4, 6], mainTilt: [0.55, 0.95], mainLength: [3.0, 4.2], mainRadius: 0.18,
+        maxDepth: 3, minLength: 0.6,
+        foliageSize: 1.1, foliageVar: 0.35,
         tipDecorate: (g, pos) => {
-          // Cluster of oranges at each fruiting tip
-          const num = 4 + Math.floor(Math.random() * 4);
+          // Clustered ripe oranges hanging from the fruiting tips.
+          const num = 3 + Math.floor(Math.random() * 4);
           for (let j = 0; j < num; j++) {
-            const o = new T.Mesh(new T.SphereGeometry(0.65, 6, 5), orangeMat);
+            const o = new T.Mesh(new T.SphereGeometry(0.18, 6, 5), orangeMat);
             o.position.copy(pos);
-            o.position.x += (Math.random() - 0.5) * 3.5;
-            o.position.y += (Math.random() - 0.5) * 2.5;
-            o.position.z += (Math.random() - 0.5) * 3.5;
+            o.position.x += (Math.random() - 0.5) * 1.0;
+            o.position.y += (Math.random() - 0.5) * 0.8;
+            o.position.z += (Math.random() - 0.5) * 1.0;
             o.castShadow = true;
             g.add(o);
           }
