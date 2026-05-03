@@ -1381,7 +1381,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v106</div>
+<div id="version">v107</div>
 
 <div id="help">
   <kbd>drag</kbd> orbit &nbsp;·&nbsp; <kbd>wheel</kbd> zoom &nbsp;·&nbsp; <kbd>right-drag</kbd> pan<br>
@@ -3290,20 +3290,25 @@ const PLACEABLES = {
       }
       return _buildShrubCluster({
         shape: 'box',
-        width: 2.4, depth: 0.85, height: 3.6, yBase: 0.2,
-        density: 75, planeSize: 0.78,
-        // Several hidden support stems running along the hedge length
+        // Wider than tall: 5 ft long × ~2 ft thick × 3 ft tall — that's
+        // a hedge proportion, not a tree. Foliage spans the full height
+        // (yBase=0) so the silhouette is a solid wall from ground up.
+        width: 2.5, depth: 1.0, height: 3.0, yBase: 0,
+        density: 130, planeSize: 0.95,
+        // Stems are mostly hidden inside the foliage volume — thin and
+        // few. A real hedge reads as continuous foliage, not a row of
+        // tree trunks with leaves on top.
         woodMat: new T.MeshStandardMaterial({ color: 0x5a4030, roughness: 0.95 }),
-        numStems: 4, stemSpread: 1.6,
-        trunkHeight: 2.6, trunkRadius: 0.05,
+        numStems: 2, stemSpread: 1.6,
+        trunkHeight: 1.6, trunkRadius: 0.04,
         folMats: [
           new T.MeshStandardMaterial({ color: 0x2d4d2a }),
           new T.MeshStandardMaterial({ color: 0x416a3b })
         ],
-        flowerChance: 0.18,
+        flowerChance: 0.14,
         tipDecorate: (g, pos) => {
           const u = makeUmbel();
-          u.position.set(pos.x, pos.y + 0.12, pos.z);
+          u.position.set(pos.x, pos.y + 0.08, pos.z);
           g.add(u);
         }
       });
