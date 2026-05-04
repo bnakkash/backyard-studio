@@ -141,6 +141,59 @@
   .subtitle-links a:hover { border-color: var(--accent); }
   .subtitle-links a:active { background: var(--panel-hi); }
 
+  /* Palette search input — filters items live as you type. */
+  #palette-search {
+    width: 100%;
+    margin-top: 8px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid var(--border);
+    color: var(--text);
+    font-family: inherit;
+    font-size: 12px;
+    padding: 6px 10px;
+    border-radius: 4px;
+    outline: none;
+    transition: border-color 0.15s;
+  }
+  #palette-search:focus { border-color: var(--accent); }
+  #palette-search::-webkit-search-cancel-button { -webkit-appearance: none; }
+  /* Plant info badges in selection card */
+  .plant-info { display: flex; gap: 6px; margin-top: 8px; flex-wrap: wrap; }
+  .plant-info .info-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    border-radius: 100px;
+    padding: 3px 8px 3px 6px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 10px;
+    color: var(--text-dim);
+  }
+  .plant-info .info-badge .info-icon { font-size: 12px; line-height: 1; }
+  /* Cinematic mode — hide all overlays for screenshot/clean view */
+  body.cinematic #left-panel,
+  body.cinematic #right-panel,
+  body.cinematic #sun-bar,
+  body.cinematic #help-btn,
+  body.cinematic #settings-btn,
+  body.cinematic #compass,
+  body.cinematic #version,
+  body.cinematic #scale-bar,
+  body.cinematic #mobile-toggle,
+  body.cinematic #mobile-backdrop,
+  body.cinematic #mode-badge,
+  body.cinematic #toast,
+  body.cinematic #bottom-bar > :not(#cinematic-btn),
+  body.cinematic #tile-handles,
+  body.cinematic #select-actions,
+  body.cinematic #recent-dock,
+  body.cinematic #status-pill,
+  body.cinematic #help { display: none !important; }
+  body.cinematic #cinematic-btn {
+    background: var(--accent); color: #1c2118; border-color: var(--accent);
+  }
+  /* Toast: clickable + slightly higher z to reliably dismiss */
+  #toast { cursor: pointer; pointer-events: auto; }
   .palette {
     flex: 1;
     overflow-y: auto;
@@ -1452,6 +1505,7 @@
       <a href="#" id="edit-yard-link">Edit</a>
       <a href="#" id="sun-toggle-link">☀ Sun &amp; Time</a>
     </div>
+    <input type="search" id="palette-search" placeholder="Search items…" autocomplete="off" />
   </div>
   <div class="palette" id="palette"></div>
 </div>
@@ -1521,6 +1575,7 @@
   <button class="cam-btn" data-view="front">Yard view</button>
   <button class="cam-btn" id="reset-cam">Reset</button>
   <button class="cam-btn" id="fit-yard-btn" title="Frame entire yard">Fit Yard</button>
+  <button class="cam-btn icon-btn" id="cinematic-btn" aria-pressed="false" aria-label="Hide UI" title="Hide UI for clean view">▣</button>
   <span class="cam-divider"></span>
   <button class="cam-btn icon-btn" id="rot-left" aria-label="Rotate camera 90° left" title="Rotate 90° left">↺</button>
   <button class="cam-btn icon-btn" id="rot-right" aria-label="Rotate camera 90° right" title="Rotate 90° right">↻</button>
@@ -1538,7 +1593,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v111</div>
+<div id="version">v112</div>
 
 <!-- Recent-items dock: bottom-center bar with up to 5 chips of the
      most recently armed/placed item kinds for one-tap re-arming. -->
@@ -5546,9 +5601,11 @@ let lastTouchAngle = null;
 let _lastTapTime = 0, _lastTapX = 0, _lastTapY = 0;
 let _zoomRAF = null;
 function doubleTapZoom(t) {
-  // Zoom toward the world point under the tap. Pulls target halfway to that
-  // point and shrinks orbit radius to ~60%. Animated for ~280ms.
-  const pt = groundPick(t);
+  // Zoom toward the tapped point — but if there's a current selection,
+  // prefer zooming to the selection (more useful for inspecting an item).
+  const pt = (selection && !walkMode)
+    ? new T.Vector3(selection.mesh.position.x, 0, selection.mesh.position.z)
+    : groundPick(t);
   const startTarget = target.clone();
   const endTarget = pt ? startTarget.clone().lerp(pt, 0.55) : startTarget;
   const startRadius = cam.radius;
@@ -6261,6 +6318,96 @@ try {
     showOnboardingStep(1);
   }
 } catch (_) {}
+
+// ============================================================
+// UX feature: Cinematic / hide-UI toggle. Adds body.cinematic class
+// which our CSS uses to display:none every overlay. Press the icon
+// again to bring everything back.
+// ============================================================
+const cinematicBtn = document.getElementById('cinematic-btn');
+cinematicBtn.addEventListener('click', () => {
+  const on = document.body.classList.toggle('cinematic');
+  cinematicBtn.setAttribute('aria-pressed', on ? 'true' : 'false');
+  if (on) toast('UI hidden · tap ▣ to restore');
+});
+
+// ============================================================
+// UX feature: Palette search filter. Hides items whose name doesn't
+// match the query (case-insensitive substring). Section headers stay
+// visible; if no items in a section match, hide the header too.
+// ============================================================
+const paletteSearch = document.getElementById('palette-search');
+paletteSearch.addEventListener('input', () => {
+  const q = paletteSearch.value.trim().toLowerCase();
+  const palette = document.getElementById('palette');
+  let lastCategoryEl = null;
+  let categoryHasMatch = false;
+  Array.from(palette.children).forEach(el => {
+    if (el.classList.contains('category')) {
+      // Finalize previous category visibility
+      if (lastCategoryEl) lastCategoryEl.style.display = categoryHasMatch ? '' : 'none';
+      lastCategoryEl = el;
+      categoryHasMatch = false;
+    } else if (el.classList.contains('item')) {
+      const name = el.querySelector('.item-text > div').textContent.toLowerCase();
+      const dim = (el.querySelector('.item-dim') || {}).textContent || '';
+      const match = !q || name.includes(q) || dim.toLowerCase().includes(q);
+      el.style.display = match ? '' : 'none';
+      if (match) categoryHasMatch = true;
+    }
+  });
+  if (lastCategoryEl) lastCategoryEl.style.display = categoryHasMatch ? '' : 'none';
+});
+
+// ============================================================
+// UX feature: Plant info badges. Reads a small `info` block on each
+// PLACEABLES entry (height, sun, water) and renders pill badges in
+// the selection card. Plants without info show no badges. Defaults
+// applied below for the current set of plants.
+// ============================================================
+const PLANT_INFO = {
+  tree_oak:        { height: '40–60 ft', sun: 'Full sun',     water: 'Low'      },
+  tree_orange:     { height: '12–18 ft', sun: 'Full sun',     water: 'Medium'   },
+  tree_palm:       { height: '20–30 ft', sun: 'Full sun',     water: 'Low'      },
+  shrub:           { height: '2–4 ft',   sun: 'Sun/part',     water: 'Medium'   },
+  false_rosemary:  { height: '1–2 ft',   sun: 'Full sun',     water: 'Very low' },
+  viburnum:        { height: '5–8 ft',   sun: 'Sun/part',     water: 'Medium'   },
+  bougainvillea:   { height: '6–20 ft',  sun: 'Full sun',     water: 'Low'      },
+  salvia:          { height: '2–3 ft',   sun: 'Full sun',     water: 'Low'      }
+};
+function renderPlantInfo(kind) {
+  const info = PLANT_INFO[kind];
+  if (!info) return '';
+  const badges = [
+    info.height ? `<span class="info-badge"><span class="info-icon">↕</span>${info.height}</span>` : '',
+    info.sun    ? `<span class="info-badge"><span class="info-icon">☀</span>${info.sun}</span>`    : '',
+    info.water  ? `<span class="info-badge"><span class="info-icon">💧</span>${info.water}</span>`  : ''
+  ].filter(Boolean).join('');
+  return `<div class="plant-info">${badges}</div>`;
+}
+// Wrap refreshSelectionPanel to inject info badges below the existing
+// name + category line. Idempotent and additive.
+const _origRefreshSelectionPanel = refreshSelectionPanel;
+refreshSelectionPanel = function() {
+  _origRefreshSelectionPanel.apply(this, arguments);
+  if (!selection) return;
+  const infoHtml = renderPlantInfo(selection.kind);
+  if (!infoHtml) return;
+  const sel = document.getElementById('selection-info');
+  if (sel && !sel.querySelector('.plant-info')) {
+    sel.insertAdjacentHTML('beforeend', infoHtml);
+  }
+};
+
+// ============================================================
+// UX feature: Toast tap-to-dismiss. Tapping the toast pill clears it
+// immediately instead of waiting for the auto-fade.
+// ============================================================
+document.getElementById('toast').addEventListener('click', () => {
+  const el = document.getElementById('toast');
+  el.classList.remove('show');
+  if (typeof toastT !== 'undefined') clearTimeout(toastT);
+});
 
 // ============================================================
 // Resize
