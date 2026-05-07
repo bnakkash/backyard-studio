@@ -646,14 +646,48 @@
     top: calc(16px + var(--safe-top)); left: 50%;
     transform: translateX(-50%);
     display: flex;
+    flex-direction: column;
     align-items: center;
-    gap: 10px;
-    padding: 7px 12px;
+    gap: 6px;
+    padding: 7px 12px 8px;
     z-index: 10;
   }
+  #sun-bar .sun-row { display: flex; align-items: center; gap: 10px; }
+  #sun-bar .sun-presets { display: flex; gap: 4px; }
+  #sun-bar .sun-preset {
+    background: rgba(255,255,255,0.05);
+    border: 1px solid var(--border);
+    color: var(--text-dim);
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 100px;
+    cursor: pointer;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  #sun-bar .sun-preset:hover { color: var(--text); border-color: var(--border-hi); }
+  #sun-bar .sun-preset.active { background: rgba(212,165,116,0.22); color: var(--accent); border-color: var(--accent); }
   /* `display: flex` above outranks the browser's [hidden] rule (ID > attr).
      Re-instate hidden so toggling sunBarEl.hidden actually hides the bar. */
   #sun-bar[hidden] { display: none !important; }
+  /* Item-count badge on each palette item */
+  .palette .item .item-count {
+    position: absolute;
+    top: 6px; right: 6px;
+    min-width: 16px; height: 16px;
+    padding: 0 5px;
+    border-radius: 100px;
+    background: var(--accent);
+    color: #1c2118;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 9px;
+    font-weight: 600;
+    line-height: 16px;
+    text-align: center;
+    pointer-events: none;
+  }
+  .palette .item { position: relative; }
   #help-btn {
     position: absolute;
     top: calc(16px + var(--safe-top)); right: 88px;
@@ -1457,12 +1491,21 @@
 </div>
 
 <div id="sun-bar" class="panel" hidden>
-  <span class="sun-icon">☀</span>
-  <span class="sun-time" id="sun-time">12:00 PM</span>
-  <input type="range" id="sun-slider" class="sun-slider" min="6" max="20" step="0.1" value="12">
-  <button class="sun-now" id="sun-play" type="button" aria-label="Play day cycle" title="Play day cycle">▶</button>
-  <button class="sun-now" id="sun-now" type="button">Now</button>
-  <button class="sun-now" id="sun-close" type="button" aria-label="Hide sun bar" title="Hide">✕</button>
+  <div class="sun-row">
+    <span class="sun-icon">☀</span>
+    <span class="sun-time" id="sun-time">12:00 PM</span>
+    <input type="range" id="sun-slider" class="sun-slider" min="6" max="20" step="0.1" value="12">
+    <button class="sun-now" id="sun-play" type="button" aria-label="Play day cycle" title="Play day cycle">▶</button>
+    <button class="sun-now" id="sun-now" type="button">Now</button>
+    <button class="sun-now" id="sun-close" type="button" aria-label="Hide sun bar" title="Hide">✕</button>
+  </div>
+  <div class="sun-presets">
+    <button class="sun-preset" data-h="7"  type="button">Sunrise</button>
+    <button class="sun-preset" data-h="9"  type="button">Morning</button>
+    <button class="sun-preset" data-h="13" type="button">Noon</button>
+    <button class="sun-preset" data-h="17" type="button">Golden</button>
+    <button class="sun-preset" data-h="19" type="button">Sunset</button>
+  </div>
 </div>
 
 <!-- Floating tile handles — DOM buttons projected onto the midpoints of
@@ -1593,7 +1636,7 @@
   <span id="scale-bar-label">10 ft</span>
   <div class="scale-line" id="scale-bar-line"></div>
 </div>
-<div id="version">v112</div>
+<div id="version">v113</div>
 
 <!-- Recent-items dock: bottom-center bar with up to 5 chips of the
      most recently armed/placed item kinds for one-tap re-arming. -->
@@ -3915,12 +3958,14 @@ catOrder.forEach(cat => {
   categories[cat].forEach(([key, item]) => {
     const el = document.createElement('div');
     el.className = 'item';
+    el.dataset.kind = key;
     el.innerHTML = `
       <span class="item-icon">${item.icon}</span>
       <div class="item-text">
         <div>${item.name}</div>
         <div class="item-dim">${item.footprint}</div>
       </div>
+      <span class="item-count" hidden>0</span>
     `;
     el.addEventListener('click', () => {
       // Radial-menu express path: long-press → Place pre-armed a target
@@ -4195,9 +4240,29 @@ function setOutline(item, on) {
       );
       outline.rotation.x = -Math.PI / 2;
       outline.position.y = 0.08;
-      // Counter-rotate so it doesn't spin when item rotates
       item.outlineWrapper = new T.Group();
       item.outlineWrapper.add(outline);
+      // Rectangular ground footprint showing the item's true bbox so
+      // the user can see exactly where it occupies space (helpful for
+      // tiling and avoiding overlaps). Drawn as a thin LineLoop above
+      // the ground with depthTest off so it's always visible.
+      const sz = (typeof getItemSizeXZ === 'function')
+        ? getItemSizeXZ(item)
+        : { x: Math.max(0.4, size.x), z: Math.max(0.4, size.z) };
+      const hx = sz.x / 2, hz = sz.z / 2;
+      const verts = new Float32Array([
+        -hx, 0.06, -hz,   hx, 0.06, -hz,
+         hx, 0.06,  hz,  -hx, 0.06,  hz
+      ]);
+      const fpGeom = new T.BufferGeometry();
+      fpGeom.setAttribute('position', new T.BufferAttribute(verts, 3));
+      const fpMat = new T.LineBasicMaterial({
+        color: 0xd4a574, transparent: true, opacity: 0.85, depthTest: false
+      });
+      const footprint = new T.LineLoop(fpGeom, fpMat);
+      footprint.renderOrder = 999;
+      item.outlineWrapper.add(footprint);
+      item.footprint = footprint;
       scene.add(item.outlineWrapper);
       item.outline = outline;
     }
@@ -6105,6 +6170,24 @@ window.addEventListener('keydown', e => {
   } else if (!mod && (e.key === 'g' || e.key === 'G')) {
     setSnap(!snapEnabled);
     toast(snapEnabled ? 'Snap to 1 ft · ON' : 'Snap · OFF');
+  } else if (!mod && (e.key === 'r' || e.key === 'R') && selection) {
+    // R rotates +90°; Shift+R rotates -90°.
+    const cur = (typeof getRotationIntent === 'function') ? getRotationIntent() : selection.mesh.rotation.y;
+    const delta = e.shiftKey ? -Math.PI / 2 : Math.PI / 2;
+    applyRotationToSelection(cur + delta, { commit: true, skipSnap: true });
+  } else if (!mod && (e.key === 'f' || e.key === 'F') && selection) {
+    // Focus camera on selection
+    target.set(selection.mesh.position.x, 0, selection.mesh.position.z);
+    cam.radius = Math.min(cam.radius, 28);
+    updateCam();
+  } else if (!mod && (e.key === 'b' || e.key === 'B')) {
+    // Frame the entire yard
+    const fitBtn = document.getElementById('fit-yard-btn');
+    if (fitBtn) fitBtn.click();
+  } else if (!mod && (e.key === 'h' || e.key === 'H')) {
+    // Toggle cinematic / hide-UI
+    const cb = document.getElementById('cinematic-btn');
+    if (cb) cb.click();
   }
 });
 
@@ -6258,6 +6341,33 @@ selectActionsEl.querySelectorAll('.select-action').forEach(btn => {
     }
   });
 });
+
+// ============================================================
+// UX feature: Palette count badges. Each palette item shows how many
+// you've placed of that kind, so it's easy to see the full inventory
+// at a glance. Updated whenever placed[] changes (via pushHistory hook).
+// ============================================================
+function updatePaletteCounts() {
+  const counts = {};
+  placed.forEach(p => { counts[p.kind] = (counts[p.kind] || 0) + 1; });
+  document.querySelectorAll('#palette .item').forEach(el => {
+    const k = el.dataset.kind;
+    const badge = el.querySelector('.item-count');
+    if (!badge) return;
+    const n = counts[k] || 0;
+    if (n > 0) { badge.hidden = false; badge.textContent = n; }
+    else       { badge.hidden = true; }
+  });
+}
+// pushHistory is the natural funnel for any layout change.
+const _origPushHistory = pushHistory;
+pushHistory = function() {
+  const r = _origPushHistory.apply(this, arguments);
+  updatePaletteCounts();
+  return r;
+};
+// Initial render in case the autosave loaded items before our hook.
+updatePaletteCounts();
 
 // ============================================================
 // UX feature: Save/item status pill.
@@ -6449,7 +6559,42 @@ function faceNorth() {
   toast('Facing north');
 }
 
-compassEl.addEventListener('click', faceNorth);
+// Compass click cycles the camera through cardinal directions: each
+// click rotates 90° clockwise (N → E → S → W → N), so users can quickly
+// reorient. Long-press (or double-click) snaps back to true north.
+let _compassClickT = 0;
+function cycleCardinal() {
+  // Rotate camera theta by -90° (clockwise from above). Animated.
+  const start = cam.theta;
+  const end = start - Math.PI / 2;
+  const t0 = performance.now();
+  const dur = 280;
+  (function step() {
+    const k = Math.min(1, (performance.now() - t0) / dur);
+    const e = 1 - Math.pow(1 - k, 3);
+    cam.theta = start + (end - start) * e;
+    updateCam();
+    if (k < 1) requestAnimationFrame(step);
+  })();
+  // Determine which direction is now "up" on screen (where camera looks).
+  // After this rotation, label which cardinal we're facing.
+  const facingRad = end + Math.PI; // camera looks toward target (opposite of theta)
+  const facingDeg = ((facingRad * 180 / Math.PI) % 360 + 360) % 360;
+  const dirs = ['east', 'north', 'west', 'south'];
+  const idx = Math.round(facingDeg / 90) % 4;
+  toast('Facing ' + dirs[idx]);
+}
+compassEl.addEventListener('click', () => {
+  const now = performance.now();
+  if (now - _compassClickT < 320) {
+    // Double-click: reset to north
+    faceNorth();
+    _compassClickT = 0;
+  } else {
+    cycleCardinal();
+    _compassClickT = now;
+  }
+});
 
 // Settings — persisted preferences for desktop input feel.
 const settings = (() => {
@@ -6958,6 +7103,21 @@ animate();
     setSunTime(h);
     try { localStorage.setItem('backyard_sun_hour', String(h)); } catch (_) {}
     toast('Sun · current time');
+  });
+  // Preset chips: jump to common photographer-friendly times of day.
+  document.querySelectorAll('.sun-preset').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const h = parseFloat(btn.dataset.h);
+      slider.value = h;
+      setSunTime(h);
+      try { localStorage.setItem('backyard_sun_hour', String(h)); } catch (_) {}
+      // Highlight the active preset
+      document.querySelectorAll('.sun-preset').forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+  // Clear preset highlight on slider drag (user is now between presets).
+  slider.addEventListener('input', () => {
+    document.querySelectorAll('.sun-preset').forEach(b => b.classList.remove('active'));
   });
 
   // Day-cycle playback. ▶ animates the sun from 6 AM → 8 PM over ~15 s,
